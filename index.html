@@ -5,30 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>静岡ブルーレヴズミニゲーム</title>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background: #0054a6; font-family: sans-serif; }
+        body { margin: 0; padding: 0; overflow: hidden; background: #0a318f; font-family: sans-serif; }
         canvas { 
             display: block; width: 100vw; height: 100vh; touch-action: none; 
-            background-image: url('bg.jpg'); 
-            background-size: cover;
-            background-position: center bottom;
+            background-image: url('bg.jpg'); background-size: cover; background-position: center bottom;
         }
         #scoreDisplay { 
-            position: absolute; top: 40px; right: 30px; 
-            font-size: 28px; font-weight: bold; color: #fff; 
+            position: absolute; top: 35px; right: 30px; 
+            font-size: 24px; font-weight: bold; color: #4ba4d7; 
             text-shadow: 2px 2px 4px #000; z-index: 100; 
         }
-        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 1000; }
-        #title-img { width: auto; height: auto; max-width: 70%; max-height: 45vh; margin-bottom: 20px; }
-        #start-text { font-size: 20px; animation: blink 1.5s infinite; margin: 0;}
-        #orientation-msg { display: none; background: #000; }
-        @keyframes blink { 0%, 100% {opacity: 1;} 50% {opacity: 0.3;} }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 49, 143, 0.85); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 1000; }
+        #title-img { width: auto; height: auto; max-width: 65%; max-height: 40vh; margin-bottom: 15px; }
+        #start-text { font-size: 20px; animation: blink 1.5s infinite; color: #4ba4d7; font-weight: bold; }
+        @keyframes blink { 0%, 100% {opacity: 1;} 50% {opacity: 0.4;} }
     </style>
 </head>
 <body>
     <div id="scoreDisplay">Score: 0</div>
-    <div id="orientation-msg" class="overlay"><span>📱</span>画面を【横向き】にしてね！</div>
+    <div id="orientation-msg" class="overlay">📱<br>画面を【横向き】にしてね！</div>
     <div id="start-screen" class="overlay">
-        <img src="title.png" id="title-img" alt="走れ！レヴズくん">
+        <img src="title.png" id="title-img">
         <p id="start-text">画面をタップしてスタート！</p>
     </div>
     <canvas id="gameCanvas"></canvas>
@@ -36,84 +33,66 @@
     <script>
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
-        const startScreen = document.getElementById("start-screen");
-        const orientMsg = document.getElementById("orientation-msg");
-
-        const imgP = new Image(); imgP.src = 'player.png';
-        const imgB = new Image(); imgB.src = 'ball.png';
         const sndJump = new Audio('jump.mp3'); 
         const sndDead = new Audio('dead.mp3');
+        const imgP = new Image(); imgP.src = 'player.png';
+        const imgB = new Image(); imgB.src = 'ball.png';
 
-        let pLoaded = false;
-        let bLoaded = false;
-        let ballRatio = 1;
+        let score = 0, gameActive = false, gameStarted = false, isPortrait = false;
+        let speed = 0, obstacles = [], groundY = 0;
+        let pLoaded = false, bLoaded = false, bRatio = 1;
 
-        imgP.onload = () => { pLoaded = true; };
-        imgB.onload = () => { bLoaded = true; ballRatio = imgB.width / imgB.height; };
-
-        let score = 0;
-        let gameActive = false;
-        let gameStarted = false;
-        let isPortrait = false;
-        let speed = 0;
-        let obstacles = [];
-        let groundY = 0;
+        imgP.onload = () => pLoaded = true;
+        imgB.onload = () => { bLoaded = true; bRatio = imgB.width / imgB.height; };
 
         let player = { x: 80, y: 0, w: 0, h: 0, dy: 0, jump: 0, grav: 0, onG: false };
 
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-            groundY = canvas.height * 0.68;
+            groundY = canvas.height * 0.72; // 芝生の位置を微調整
 
-            // キャラクターサイズ：画面高さの22%
-            player.h = canvas.height * 0.22;
+            // レヴズくん：一回り大きく（高さ28%）
+            player.h = canvas.height * 0.28;
             player.w = player.h * (imgP.width / imgP.height || 1);
-            player.jump = canvas.height * 0.032;
-            player.grav = canvas.height * 0.0013;
+            player.jump = canvas.height * 0.035;
+            player.grav = canvas.height * 0.0015;
 
             isPortrait = canvas.height > canvas.width;
-            orientMsg.style.display = isPortrait ? "flex" : "none";
-            if(!gameStarted) startScreen.style.display = isPortrait ? "none" : "flex";
+            document.getElementById("orientation-msg").style.display = isPortrait ? "flex" : "none";
+            if(!gameStarted) document.getElementById("start-screen").style.display = isPortrait ? "none" : "flex";
             if(!gameActive) draw();
         }
         window.addEventListener('resize', resize);
         resize();
 
-        // --- 【修正】ボールのサイズを一定にする ---
         function addObs() {
             if (!gameActive) return;
-            
-            // ランダムを廃止し、レヴズくんと同じ高さ（player.h）に基づいた一定サイズに固定
-            let baseH = player.h * 0.9; // レヴズくんより一回り小さいサイズで固定
-            let baseW = baseH * ballRatio;
-
+            // 敵キャラ：屈んでいるので、レヴズくんより少し小さめの固定サイズ
+            let baseH = player.h * 0.75;
+            let baseW = baseH * bRatio;
             obstacles.push({ x: canvas.width, y: groundY - baseH, w: baseW, h: baseH });
-            
-            // 出現間隔のみランダム（ゲーム性を保つため）
             setTimeout(addObs, 1400 + Math.random() * 1200);
         }
 
         function doStart() {
             gameStarted = true; gameActive = true;
-            startScreen.style.display = "none";
-            score = 0; obstacles = [];
-            speed = canvas.width / 120;
+            document.getElementById("start-screen").style.display = "none";
+            score = 0; obstacles = []; speed = canvas.width / 110;
             player.y = groundY - player.h;
-            document.getElementById("scoreDisplay").innerText = "Score: 0";
-            addObs();
-            loop();
+            addObs(); loop();
         }
 
         function action(e) {
             if (e && e.cancelable) e.preventDefault();
             if (isPortrait) return;
-            if (!gameStarted) { doStart(); } 
-            else if (!gameActive) { location.reload(); } 
+            if (!gameStarted) doStart();
+            else if (!gameActive) location.reload();
             else if (player.onG) {
-                player.dy = -player.jump;
-                player.onG = false;
-                sndJump.currentTime = 0; sndJump.play().catch(()=>{});
+                player.dy = -player.jump; player.onG = false;
+                // 音の改善：クローンを作ることで連続再生に対応
+                let s = sndJump.cloneNode(true);
+                s.volume = 0.5; s.play().catch(()=>{});
             }
         }
 
@@ -130,18 +109,14 @@
             obstacles.forEach((o, i) => {
                 o.x -= speed;
                 // 当たり判定
-                if (player.x + player.w*0.25 < o.x + o.w*0.75 && player.x + player.w*0.75 > o.x + o.w*0.25 &&
-                    player.y + player.h*0.25 < o.y + o.h*0.75 && player.y + player.h > o.y + o.h*0.1) {
+                if (player.x + player.w*0.3 < o.x + o.w*0.7 && player.x + player.w*0.7 > o.x + o.w*0.3 &&
+                    player.y + player.h*0.3 < o.y + o.h*0.7 && player.y + player.h > o.y + o.h*0.2) {
                     gameActive = false;
                     sndDead.play().catch(()=>{});
                 }
-                if (o.x + o.w < 0) {
-                    obstacles.splice(i, 1);
-                    score++;
-                    document.getElementById("scoreDisplay").innerText = "Score: " + score;
-                    speed += 0.05;
-                }
+                if (o.x + o.w < 0) { obstacles.splice(i, 1); score++; speed += 0.05; }
             });
+            document.getElementById("scoreDisplay").innerText = "Score: " + score;
             draw();
             requestAnimationFrame(loop);
         }
@@ -151,31 +126,26 @@
             if(pLoaded) ctx.drawImage(imgP, player.x, player.y, player.w, player.h);
             obstacles.forEach(o => { if(bLoaded) ctx.drawImage(imgB, o.x, o.y, o.w, o.h); });
 
-            // --- 【修正】試合終了画面の重なり解消と配色 ---
             if (!gameActive && gameStarted) {
-                ctx.fillStyle = "rgba(0,0,0,0.85)";
+                ctx.fillStyle = "rgba(10, 49, 143, 0.9)";
                 ctx.fillRect(0,0,canvas.width, canvas.height);
                 ctx.textAlign = "center";
-                let cy = canvas.height / 2;
+                let cy = canvas.height * 0.45; // 少し上に配置
                 
-                ctx.fillStyle = "white";
-                ctx.font = "bold 28px sans-serif";
-                ctx.fillText("試合終了！", canvas.width/2, cy - 90);
+                ctx.fillStyle = "white"; ctx.font = "bold 24px sans-serif";
+                ctx.fillText("試合終了！", canvas.width/2, cy - 60);
                 
-                ctx.font = "20px sans-serif";
-                ctx.fillText("SCORE", canvas.width/2, cy - 50);
+                ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 18px sans-serif";
+                ctx.fillText("SCORE", canvas.width/2, cy - 25);
                 
-                // スコアを大きく、目立つイエローに
-                ctx.fillStyle = "#ffcc00"; 
-                ctx.font = "bold 80px sans-serif";
-                ctx.fillText(score, canvas.width/2, cy + 30);
+                ctx.font = "bold 55px sans-serif"; // サイズを2/3程度に
+                ctx.fillText(score, canvas.width/2, cy + 25);
                 
-                ctx.fillStyle = "white";
-                ctx.font = "bold 16px sans-serif";
-                ctx.fillText("このスコアをグッズショップ入口で教えてね！", canvas.width/2, cy + 85);
+                ctx.fillStyle = "white"; ctx.font = "bold 15px sans-serif";
+                ctx.fillText("このスコアをグッズショップ入口で教えてね！", canvas.width/2, cy + 70);
                 
-                ctx.font = "18px sans-serif";
-                ctx.fillText("▼ タップしてリトライ ▼", canvas.width/2, cy + 135);
+                ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 18px sans-serif";
+                ctx.fillText("▼ タップしてリトライ ▼", canvas.width/2, cy + 115);
             }
         }
     </script>
