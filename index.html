@@ -5,38 +5,66 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>チーム公式ミニゲーム</title>
     <style>
-        /* 画面いっぱいに表示する設定 */
-        body { margin: 0; padding: 0; overflow: hidden; background: #eee; font-family: sans-serif; }
-        canvas { display: block; background: #fff; width: 100vw; height: auto; touch-action: manipulation; }
+        body { margin: 0; padding: 0; overflow: hidden; background: #87CEEB; /* 空の色 */ font-family: sans-serif; }
         
-        /* スコアの文字を大きく */
+        /* ▼▼▼ 背景画像を設定する場合はここを変更 ▼▼▼ */
+        /* 画像を用意したら、GitHubにアップロードし、そのファイル名をここに書きます */
+        /* 例: background-image: url('background.jpg'); */
+        canvas { 
+            display: block; width: 100vw; height: 100vh; touch-action: manipulation;
+            background-color: transparent; /* 背景を透過させて下のbodyの色や画像を見せる */
+             /* background-image: url('ここに画像のファイル名.jpg'); */ /* ←画像を使う場合はここのコメントを外す */
+            background-size: cover;
+            background-position: center;
+        }
+        /* ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ */
+
         #scoreDisplay {
             position: absolute; top: 10px; left: 20px;
-            font-size: 30px; font-weight: bold; color: #333;
+            font-size: 30px; font-weight: bold; color: #333; z-index: 10;
         }
+
+        /* 共通のオーバーレイ（スタート画面・回転警告など） */
+        .overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); color: white;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center; text-align: center; z-index: 100;
+        }
+
+        /* スタート画面 */
+        #start-screen { display: flex; cursor: pointer;}
+        #start-screen h1 { font-size: 40px; margin-bottom: 20px; color: #E60012; /* チームカラー */ }
+        #start-screen p { font-size: 24px; animation: blink 1.5s infinite; }
 
         /* 横向き推奨メッセージ（縦の時だけ表示） */
         @media screen and (orientation: portrait) {
-            #orientation-msg { display: flex; }
+            #orientation-msg { display: flex !important; }
+            #start-screen { display: none !important; } /* 縦向きの時はスタート画面を隠す */
         }
-        #orientation-msg {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8); color: white;
-            justify-content: center; align-items: center; text-align: center; z-index: 100;
-            font-size: 20px; padding: 20px; box-sizing: border-box;
-        }
+        #orientation-msg { display: none; }
+
+        /* 点滅アニメーション */
+        @keyframes blink { 0% {opacity: 1;} 50% {opacity: 0.3;} 100% {opacity: 1;} }
     </style>
 </head>
 <body>
-    <div id="orientation-msg">📱 画面を【横向き】にすると<br>大きく表示されて遊びやすいですよ！</div>
+    <div id="orientation-msg" class="overlay">
+        📱<br>画面を【横向き】にして<br>遊んでください！
+    </div>
+
+    <div id="start-screen" class="overlay">
+        <h1>BLUE REVS RUN!</h1> <p>TAP TO START</p>
+    </div>
+
     <div id="scoreDisplay">Score: 0</div>
     <canvas id="gameCanvas"></canvas>
 
     <script>
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
+        const startScreen = document.getElementById("start-screen");
 
-        // 画面サイズに合わせて調整
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
@@ -45,38 +73,68 @@
         resize();
 
         let score = 0;
-        let gameActive = true;
-        let gameSpeed = canvas.width / 100; // 画面幅に合わせた速度
+        let gameActive = false; // 最初は動かないようにする
+        let gameSpeed = canvas.width / 120; // 少しゆっくりに調整
 
-        // キャラクターも大きめに設定（老眼対応）
+        // プレイヤー（赤の四角）
         const player = {
             x: 50, y: 0, 
-            width: 80, height: 80, // サイズアップ！
-            color: "#E60012", // チームカラー例
-            dy: 0, jumpForce: 15, gravity: 0.8, grounded: false
+            width: 80, height: 80,
+            color: "#E60012",
+            dy: 0, jumpForce: 17, gravity: 0.8, grounded: false // ジャンプ力を少しアップ
         };
 
         let obstacles = [];
+
+        // ゲーム開始処理
+        function startGame() {
+            if (gameActive) return;
+            startScreen.style.display = "none"; // スタート画面を消す
+            gameActive = true;
+            score = 0;
+            obstacles = [];
+            gameSpeed = canvas.width / 120;
+            player.y = canvas.height - player.height - 50; // 地面の位置にリセット
+            document.getElementById("scoreDisplay").innerText = "Score: 0";
+            spawnObstacle();
+            update();
+        }
+
+        // 【修正点】障害物の生成
         function spawnObstacle() {
             if (!gameActive) return;
-            const size = 60 + Math.random() * 40; // 障害物も大きく
+            // サイズを小さく調整（40〜80の間）
+            const size = 40 + Math.random() * 40; 
             obstacles.push({
-                x: canvas.width, y: canvas.height - size - 20,
-                width: size, height: size, color: "#333"
+                x: canvas.width, 
+                y: canvas.height - size - 50, // 地面の高さに合わせて調整
+                width: size, height: size, color: "#555"
             });
-            setTimeout(spawnObstacle, Math.random() * 1500 + 800);
+            // 次の出現時間を調整
+            setTimeout(spawnObstacle, Math.random() * 1500 + 1000);
         }
 
         function jump() {
+            // ゲーム開始前ならスタートさせる
+            if (!gameActive && startScreen.style.display !== "none") {
+                startGame();
+                return;
+            }
+            // ゲームオーバー後ならリロード
+            if (!gameActive && startScreen.style.display === "none") {
+                location.reload();
+                return;
+            }
+            // ジャンプ処理
             if (player.grounded && gameActive) {
                 player.dy = -player.jumpForce;
                 player.grounded = false;
             }
-            if (!gameActive) location.reload();
         }
 
-        window.addEventListener("touchstart", (e) => { e.preventDefault(); jump(); });
+        window.addEventListener("touchstart", (e) => { e.preventDefault(); jump(); }, {passive: false});
         window.addEventListener("mousedown", jump);
+        window.addEventListener("keydown", (e) => { if(e.code==="Space") jump(); });
 
         function update() {
             if (!gameActive) return;
@@ -84,8 +142,8 @@
             player.dy += player.gravity;
             player.y += player.dy;
 
-            // 地面の判定（画面の一番下から少し上に設定）
-            const groundY = canvas.height - player.height - 20;
+            // 地面の判定（芝生エリアを想定して少し高く設定）
+            const groundY = canvas.height - player.height - 50; 
             if (player.y > groundY) {
                 player.y = groundY;
                 player.dy = 0;
@@ -94,18 +152,18 @@
 
             obstacles.forEach((obs, index) => {
                 obs.x -= gameSpeed;
-                // 当たり判定
-                if (player.x < obs.x + obs.width &&
-                    player.x + player.width > obs.x &&
-                    player.y < obs.y + obs.height &&
-                    player.y + player.height > obs.y) {
-                    gameActive = false;
+                // 当たり判定（少し甘めに調整：四角形の上下左右を数ピクセル内側で判定）
+                 if (player.x + 10 < obs.x + obs.width - 5 &&
+                    player.x + player.width - 10 > obs.x + 5 &&
+                    player.y + 10 < obs.y + obs.height - 5 &&
+                    player.y + player.height > obs.y + 5) {
+                    gameOver();
                 }
                 if (obs.x + obs.width < 0) {
                     obstacles.splice(index, 1);
                     score++;
                     document.getElementById("scoreDisplay").innerText = "Score: " + score;
-                    gameSpeed += 0.1;
+                    gameSpeed += 0.05; // スピードアップを緩やかに
                 }
             });
 
@@ -115,34 +173,38 @@
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            // 地面を描く
-            ctx.fillStyle = "#333";
-            ctx.fillRect(0, canvas.height - 20, canvas.width, 2);
+            
+            // 地面（芝生）を描く（仮の緑色）
+            ctx.fillStyle = "#228B22";
+            ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
 
             // プレイヤー
             ctx.fillStyle = player.color;
             ctx.fillRect(player.x, player.y, player.width, player.height);
 
             // 障害物
-            ctx.fillStyle = "#777";
+            ctx.fillStyle = obs.color;
             obstacles.forEach(obs => {
                 ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
             });
-
-            if(!gameActive) {
-                ctx.fillStyle = "rgba(0,0,0,0.7)";
-                ctx.fillRect(0,0,canvas.width, canvas.height);
-                ctx.fillStyle = "white";
-                ctx.font = "bold 40px sans-serif";
-                ctx.textAlign = "center";
-                ctx.fillText("ゲーム終了！", canvas.width/2, canvas.height/2);
-                ctx.font = "20px sans-serif";
-                ctx.fillText("画面をタップしてもう一度挑戦", canvas.width/2, canvas.height/2 + 60);
-            }
         }
 
-        spawnObstacle();
-        update();
+        function gameOver() {
+            gameActive = false;
+            ctx.fillStyle = "rgba(0,0,0,0.7)";
+            ctx.fillRect(0,0,canvas.width, canvas.height);
+            ctx.fillStyle = "white";
+            ctx.font = "bold 40px sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
+            ctx.font = "20px sans-serif";
+            ctx.fillText("Score: " + score, canvas.width/2, canvas.height/2 + 40);
+            ctx.font = "20px sans-serif";
+            ctx.fillText("タップして再挑戦", canvas.width/2, canvas.height/2 + 80);
+        }
+
+        // 最初の描画だけしておく
+        draw();
     </script>
 </body>
 </html>
