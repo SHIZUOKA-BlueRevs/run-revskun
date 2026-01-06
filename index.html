@@ -3,15 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>静岡ブルーレヴズミニゲーム</title>
+    <title>チーム公式ミニゲーム</title>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #87CEEB; /* 空の色 */ font-family: sans-serif; }
         
-       background-image: url('bg.jpg');
+        /* ▼▼▼ 背景画像を設定する場合はここを変更 ▼▼▼ */
+        /* 画像を用意したら、GitHubにアップロードし、そのファイル名をここに書きます */
+        /* 例: background-image: url('background.jpg'); */
         canvas { 
             display: block; width: 100vw; height: 100vh; touch-action: manipulation;
             background-color: transparent; /* 背景を透過させて下のbodyの色や画像を見せる */
-             /* background-image: url('ここに画像のファイル名.jpg'); */ /* ←画像を使う場合はここのコメントを外す */
+            background-image: url('bg.jpg');
             background-size: cover;
             background-position: center;
         }
