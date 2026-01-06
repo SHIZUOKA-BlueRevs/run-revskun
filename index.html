@@ -15,26 +15,46 @@
             font-size: 24px; font-weight: bold; color: #4ba4d7; 
             text-shadow: 2px 2px 4px #000; z-index: 100; 
         }
+        #soundBtn {
+            position: absolute; top: 35px; left: 20px;
+            background: rgba(10, 49, 143, 0.7); color: white;
+            border: 2px solid #4ba4d7; border-radius: 10px;
+            padding: 8px 12px; font-size: 14px; font-weight: bold;
+            z-index: 101; cursor: pointer;
+        }
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 49, 143, 0.85); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 1000; }
-        #title-img { width: auto; height: auto; max-width: 65%; max-height: 40vh; margin-bottom: 15px; }
-        #start-text { font-size: 20px; animation: blink 1.5s infinite; color: #4ba4d7; font-weight: bold; }
+        #title-img { width: auto; height: auto; max-width: 65%; max-height: 40vh; margin-bottom: 10px; }
+        #start-text { font-size: 20px; animation: blink 1.5s infinite; color: #4ba4d7; font-weight: bold; margin-bottom: 10px; }
+        #sound-note { font-size: 13px; color: #fff; opacity: 0.8; }
         @keyframes blink { 0%, 100% {opacity: 1;} 50% {opacity: 0.4;} }
     </style>
 </head>
 <body>
+    <button id="soundBtn">🔊 音: ON</button>
     <div id="scoreDisplay">Score: 0</div>
     <div id="orientation-msg" class="overlay">📱<br>画面を【横向き】にしてね！</div>
     <div id="start-screen" class="overlay">
         <img src="title.png" id="title-img">
         <p id="start-text">画面をタップしてスタート！</p>
+        <p id="sound-note">※音が出ます。ご注意ください</p>
     </div>
     <canvas id="gameCanvas"></canvas>
 
     <script>
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
+        
+        let isMuted = false;
         const sndJump = new Audio('jump.mp3'); 
         const sndDead = new Audio('dead.mp3');
+        const soundBtn = document.getElementById("soundBtn");
+
+        soundBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            isMuted = !isMuted;
+            soundBtn.innerText = isMuted ? "🔇 音: OFF" : "🔊 音: ON";
+        });
+
         const imgP = new Image(); imgP.src = 'player.png';
         const imgB = new Image(); imgB.src = 'ball.png';
 
@@ -50,14 +70,11 @@
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-            groundY = canvas.height * 0.72; // 芝生の位置を微調整
-
-            // レヴズくん：一回り大きく（高さ28%）
+            groundY = canvas.height * 0.72;
             player.h = canvas.height * 0.28;
             player.w = player.h * (imgP.width / imgP.height || 1);
             player.jump = canvas.height * 0.035;
             player.grav = canvas.height * 0.0015;
-
             isPortrait = canvas.height > canvas.width;
             document.getElementById("orientation-msg").style.display = isPortrait ? "flex" : "none";
             if(!gameStarted) document.getElementById("start-screen").style.display = isPortrait ? "none" : "flex";
@@ -66,21 +83,39 @@
         window.addEventListener('resize', resize);
         resize();
 
-        function addObs() {
+        // 障害物出現マネージャー
+        function spawnManager() {
             if (!gameActive) return;
-            // 敵キャラ：屈んでいるので、レヴズくんより少し小さめの固定サイズ
+
+            // 敵を追加
             let baseH = player.h * 0.75;
             let baseW = baseH * bRatio;
             obstacles.push({ x: canvas.width, y: groundY - baseH, w: baseW, h: baseH });
-            setTimeout(addObs, 1400 + Math.random() * 1200);
+
+            // 難易度調整
+            let nextWait;
+            if (score < 10) {
+                // 10点までは一定のリズム（約1.8秒）
+                nextWait = 1800;
+            } else {
+                // 10点以降、徐々にランダムかつ短くなる
+                let baseWait = 1800 - Math.min((score - 10) * 40, 900); 
+                let randomRange = Math.min((score - 10) * 60, 1500);
+                nextWait = baseWait + (Math.random() * randomRange - randomRange/2);
+            }
+
+            setTimeout(spawnManager, Math.max(nextWait, 800)); // 最速0.8秒
         }
 
         function doStart() {
             gameStarted = true; gameActive = true;
             document.getElementById("start-screen").style.display = "none";
-            score = 0; obstacles = []; speed = canvas.width / 110;
+            score = 0; obstacles = []; 
+            speed = canvas.width / 110; 
             player.y = groundY - player.h;
-            addObs(); loop();
+            sndJump.play().then(() => { sndJump.pause(); }).catch(()=>{});
+            spawnManager(); 
+            loop();
         }
 
         function action(e) {
@@ -90,9 +125,10 @@
             else if (!gameActive) location.reload();
             else if (player.onG) {
                 player.dy = -player.jump; player.onG = false;
-                // 音の改善：クローンを作ることで連続再生に対応
-                let s = sndJump.cloneNode(true);
-                s.volume = 0.5; s.play().catch(()=>{});
+                if (!isMuted) {
+                    let s = sndJump.cloneNode(true);
+                    s.volume = 0.5; s.play().catch(()=>{});
+                }
             }
         }
 
@@ -108,13 +144,18 @@
 
             obstacles.forEach((o, i) => {
                 o.x -= speed;
-                // 当たり判定
-                if (player.x + player.w*0.3 < o.x + o.w*0.7 && player.x + player.w*0.7 > o.x + o.w*0.3 &&
-                    player.y + player.h*0.3 < o.y + o.h*0.7 && player.y + player.h > o.y + o.h*0.2) {
+                // 当たり判定をさらに少し内側に絞って優しく（0.3 -> 0.35）
+                if (player.x + player.w*0.35 < o.x + o.w*0.65 && player.x + player.w*0.65 > o.x + o.w*0.35 &&
+                    player.y + player.h*0.35 < o.y + o.h*0.65 && player.y + player.h > o.y + o.h*0.2) {
                     gameActive = false;
-                    sndDead.play().catch(()=>{});
+                    if (!isMuted) sndDead.play().catch(()=>{});
                 }
-                if (o.x + o.w < 0) { obstacles.splice(i, 1); score++; speed += 0.05; }
+                if (o.x + o.w < 0) { 
+                    obstacles.splice(i, 1); 
+                    score++; 
+                    // 加速をさらに緩やかに (0.06 -> 0.04)
+                    speed += 0.04; 
+                }
             });
             document.getElementById("scoreDisplay").innerText = "Score: " + score;
             draw();
@@ -130,20 +171,15 @@
                 ctx.fillStyle = "rgba(10, 49, 143, 0.9)";
                 ctx.fillRect(0,0,canvas.width, canvas.height);
                 ctx.textAlign = "center";
-                let cy = canvas.height * 0.45; // 少し上に配置
-                
+                let cy = canvas.height * 0.45;
                 ctx.fillStyle = "white"; ctx.font = "bold 24px sans-serif";
                 ctx.fillText("試合終了！", canvas.width/2, cy - 60);
-                
                 ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 18px sans-serif";
                 ctx.fillText("SCORE", canvas.width/2, cy - 25);
-                
-                ctx.font = "bold 55px sans-serif"; // サイズを2/3程度に
+                ctx.font = "bold 55px sans-serif";
                 ctx.fillText(score, canvas.width/2, cy + 25);
-                
                 ctx.fillStyle = "white"; ctx.font = "bold 15px sans-serif";
                 ctx.fillText("このスコアをグッズショップ入口で教えてね！", canvas.width/2, cy + 70);
-                
                 ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 18px sans-serif";
                 ctx.fillText("▼ タップしてリトライ ▼", canvas.width/2, cy + 115);
             }
