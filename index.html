@@ -15,11 +15,12 @@
             font-size: 24px; font-weight: bold; color: #4ba4d7; 
             text-shadow: 2px 2px 4px #000; z-index: 100; 
         }
+        /* サウンドボタンを左下に配置 */
         #soundBtn {
-            position: absolute; top: 35px; left: 20px;
-            background: rgba(10, 49, 143, 0.7); color: white;
+            position: absolute; bottom: 20px; left: 20px;
+            background: rgba(10, 49, 143, 0.8); color: white;
             border: 2px solid #4ba4d7; border-radius: 10px;
-            padding: 8px 12px; font-size: 14px; font-weight: bold;
+            padding: 10px 15px; font-size: 16px; font-weight: bold;
             z-index: 101; cursor: pointer;
         }
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 49, 143, 0.85); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 1000; }
@@ -49,11 +50,17 @@
         const sndDead = new Audio('dead.mp3');
         const soundBtn = document.getElementById("soundBtn");
 
+        // サウンドボタンのイベントがゲーム本体に伝わらないように修正
         soundBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
+            e.preventDefault();
+            e.stopPropagation(); // これが重要！
             isMuted = !isMuted;
             soundBtn.innerText = isMuted ? "🔇 音: OFF" : "🔊 音: ON";
         });
+        // スマホ用にも伝播防止
+        soundBtn.addEventListener("touchstart", (e) => {
+            e.stopPropagation();
+        }, {passive: false});
 
         const imgP = new Image(); imgP.src = 'player.png';
         const imgB = new Image(); imgB.src = 'ball.png';
@@ -83,35 +90,37 @@
         window.addEventListener('resize', resize);
         resize();
 
-        // 障害物出現マネージャー
         function spawnManager() {
             if (!gameActive) return;
 
-            // 敵を追加
             let baseH = player.h * 0.75;
             let baseW = baseH * bRatio;
             obstacles.push({ x: canvas.width, y: groundY - baseH, w: baseW, h: baseH });
 
-            // 難易度調整
             let nextWait;
             if (score < 10) {
-                // 10点までは一定のリズム（約1.8秒）
-                nextWait = 1800;
+                nextWait = 1800; // 10点までは一定
             } else {
-                // 10点以降、徐々にランダムかつ短くなる
-                let baseWait = 1800 - Math.min((score - 10) * 40, 900); 
-                let randomRange = Math.min((score - 10) * 60, 1500);
-                nextWait = baseWait + (Math.random() * randomRange - randomRange/2);
+                // 10点以降：基本は速くなる（1.8秒から徐々に短縮）
+                let baseWait = 1800 - Math.min((score - 10) * 50, 1000); 
+                
+                // 「だまし討ち」ロジック：30%の確率で、わざとゆっくり（+1秒以上）させる
+                let trick = Math.random() < 0.3 ? 1200 : 0; 
+                
+                // ランダムな揺らぎを追加
+                let jitter = (Math.random() - 0.5) * 400; 
+                
+                nextWait = baseWait + trick + jitter;
             }
 
-            setTimeout(spawnManager, Math.max(nextWait, 800)); // 最速0.8秒
+            setTimeout(spawnManager, Math.max(nextWait, 750)); // 激ムズ回避のため最低0.75秒は空ける
         }
 
         function doStart() {
             gameStarted = true; gameActive = true;
             document.getElementById("start-screen").style.display = "none";
             score = 0; obstacles = []; 
-            speed = canvas.width / 110; 
+            speed = canvas.width / 115; 
             player.y = groundY - player.h;
             sndJump.play().then(() => { sndJump.pause(); }).catch(()=>{});
             spawnManager(); 
@@ -119,6 +128,9 @@
         }
 
         function action(e) {
+            // イベントの発生源がボタンなら何もしない
+            if (e.target.id === "soundBtn") return;
+            
             if (e && e.cancelable) e.preventDefault();
             if (isPortrait) return;
             if (!gameStarted) doStart();
@@ -144,7 +156,6 @@
 
             obstacles.forEach((o, i) => {
                 o.x -= speed;
-                // 当たり判定をさらに少し内側に絞って優しく（0.3 -> 0.35）
                 if (player.x + player.w*0.35 < o.x + o.w*0.65 && player.x + player.w*0.65 > o.x + o.w*0.35 &&
                     player.y + player.h*0.35 < o.y + o.h*0.65 && player.y + player.h > o.y + o.h*0.2) {
                     gameActive = false;
@@ -153,7 +164,6 @@
                 if (o.x + o.w < 0) { 
                     obstacles.splice(i, 1); 
                     score++; 
-                    // 加速をさらに緩やかに (0.06 -> 0.04)
                     speed += 0.04; 
                 }
             });
