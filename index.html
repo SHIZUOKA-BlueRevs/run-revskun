@@ -7,28 +7,33 @@
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #0054a6; font-family: sans-serif; }
         
-        /* 背景：全画面を覆い、下（芝生）を基準に固定 */
+        /* 背景：下（芝生）を基準に配置 */
         canvas { 
-            display: block; width: 100vw; height: 100vh; touch-action: none; 
+            display: block; width: 100%; height: 100%; touch-action: none; 
             background-image: url('bg.jpg'); 
-            background-size: cover; 
-            background-position: center bottom; 
+            background-size: cover;
+            background-position: center bottom;
         }
 
-        /* スコア：右上、少し下に配置 */
+        /* スコア：右上に配置（アドレスバー被り対策で少し内側に） */
         #scoreDisplay { 
-            position: absolute; top: 40px; right: 25px; 
-            font-size: 28px; font-weight: bold; color: #fff; 
+            position: absolute; top: 20px; right: 30px; 
+            font-size: 24px; font-weight: bold; color: #fff; 
             text-shadow: 2px 2px 4px #000; z-index: 100; 
         }
 
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 1000; }
         
-        /* タイトル画像 */
-        #title-img { width: 80%; max-width: 500px; height: auto; margin-bottom: 20px; }
-        p { font-size: 24px; animation: blink 1.5s infinite; }
+        /* タイトル画像：画面高さを基準に制限してはみ出し防止 */
+        #title-img { 
+            width: auto; height: auto; 
+            max-width: 80%; max-height: 50vh; /* 画面高さの半分まで */
+            margin-bottom: 20px;
+        }
+        #start-text { font-size: 20px; animation: blink 1.5s infinite; margin: 0;}
         
         #orientation-msg { display: none; background: #000; }
+        #orientation-msg span { font-size: 50px; margin-bottom: 10px; }
         @keyframes blink { 0%, 100% {opacity: 1;} 50% {opacity: 0.3;} }
     </style>
 </head>
@@ -39,7 +44,7 @@
 
     <div id="start-screen" class="overlay">
         <img src="title.png" id="title-img" alt="走れ！レヴズくん">
-        <p>画面をタップしてスタート！</p>
+        <p id="start-text">画面をタップしてスタート！</p>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -50,14 +55,23 @@
         const startScreen = document.getElementById("start-screen");
         const orientMsg = document.getElementById("orientation-msg");
 
-        // 画像の準備
+        // 画像と効果音の準備
         const imgP = new Image(); imgP.src = 'player.png';
         const imgB = new Image(); imgB.src = 'ball.png';
-
-        // --- 【追加】効果音の設定 ---
-        // jump.mp3, dead.mp3 などの名前でGitHubにアップすれば鳴ります
         const sndJump = new Audio('jump.mp3'); 
         const sndDead = new Audio('dead.mp3');
+
+        let pLoaded = false;
+        let bLoaded = false;
+        let ballRatio = 1; // ボールの縦横比
+
+        // 画像が読み込まれたらフラグを立てる（確実に表示するため）
+        imgP.onload = () => { pLoaded = true; };
+        imgB.onload = () => { 
+            bLoaded = true;
+            // 読み込み完了時点で本来の比率を計算
+            ballRatio = imgB.width / imgB.height;
+        };
 
         let score = 0;
         let gameActive = false;
@@ -65,43 +79,52 @@
         let isPortrait = false;
         let speed = 0;
         let obstacles = [];
-        let player = { x: 80, y: 0, w: 100, h: 100, dy: 0, jump: 17, grav: 0.8, onG: false };
+        let groundY = 0; // 地面のY座標
+
+        // プレイヤー設定（サイズを少し調整）
+        let player = { x: 50, y: 0, w: 90, h: 90, dy: 0, jump: 16, grav: 0.7, onG: false };
 
         function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            // ブラウザの表示領域サイズを正確に取得
+            canvas.width = document.documentElement.clientWidth;
+            canvas.height = document.documentElement.clientHeight;
+            
+            // 地面の高さを計算（画面の下から25%の位置を芝生の境界とする）
+            groundY = canvas.height * 0.75;
+
             isPortrait = canvas.height > canvas.width;
             orientMsg.style.display = isPortrait ? "flex" : "none";
             if(!gameStarted) startScreen.style.display = isPortrait ? "none" : "flex";
-            draw();
+            
+            if(!gameActive && !isPortrait) draw(); // リサイズ時も描画更新
         }
         window.addEventListener('resize', resize);
-        resize();
+        resize(); // 初期実行
 
         function addObs() {
             if (!gameActive) return;
-            // 比率維持：幅を決め、画像の元サイズから高さを計算
-            let baseW = 60 + Math.random() * 40;
-            let ratio = imgB.width / imgB.height || 1; 
-            let baseH = baseW / ratio;
+            // 高さをランダムに決め、比率に基づいて幅を計算（歪み防止）
+            let baseH = 80 + Math.random() * 60; // 高さ80〜140px
+            let baseW = baseH * ballRatio;
 
-            obstacles.push({ x: canvas.width, y: canvas.height - baseH - 50, w: baseW, h: baseH });
-            setTimeout(addObs, 1300 + Math.random() * 1000);
+            // 地面に接するように配置
+            obstacles.push({ x: canvas.width, y: groundY - baseH, w: baseW, h: baseH });
+            setTimeout(addObs, 1200 + Math.random() * 1200);
         }
 
         function doStart() {
             gameStarted = true; gameActive = true;
             startScreen.style.display = "none";
             score = 0; obstacles = [];
-            speed = canvas.width / 100;
-            player.y = canvas.height - player.h - 50;
+            speed = canvas.width / 130; // スピード調整
+            player.y = groundY - player.h;
             document.getElementById("scoreDisplay").innerText = "Score: 0";
             addObs();
             loop();
         }
 
         function action(e) {
-            if (e) e.preventDefault();
+            if (e && e.cancelable) e.preventDefault(); // 安全なpreventDefault
             if (isPortrait) return;
 
             if (!gameStarted) {
@@ -111,8 +134,8 @@
             } else if (player.onG) {
                 player.dy = -player.jump;
                 player.onG = false;
-                // ジャンプ音を鳴らす（ファイルがあれば）
-                sndJump.play().catch(()=>{}); 
+                sndJump.currentTime = 0; 
+                sndJump.play().catch(()=>{});
             }
         }
 
@@ -125,22 +148,23 @@
             player.dy += player.grav;
             player.y += player.dy;
 
-            let floor = canvas.height - player.h - 50;
+            // 地面との接触判定
+            let floor = groundY - player.h;
             if (player.y > floor) { player.y = floor; player.dy = 0; player.onG = true; }
 
             obstacles.forEach((o, i) => {
                 o.x -= speed;
-                // 当たり判定：中心を狙う（足元と頭の判定をさらに絞る）
-                if (player.x + 35 < o.x + o.w - 35 && player.x + player.w - 35 > o.x + 35 &&
-                    player.y + 35 < o.y + o.h - 35 && player.y + player.h - 10 > o.y + 10) {
+                // 当たり判定（少し甘めに）
+                if (player.x + 25 < o.x + o.w - 20 && player.x + player.w - 25 > o.x + 20 &&
+                    player.y + 25 < o.y + o.h - 10 && player.y + player.h - 5 > o.y + 10) {
                     gameActive = false;
-                    sndDead.play().catch(()=>{}); // 終了音
+                    sndDead.play().catch(()=>{});
                 }
                 if (o.x + o.w < 0) {
                     obstacles.splice(i, 1);
                     score++;
                     document.getElementById("scoreDisplay").innerText = "Score: " + score;
-                    speed += 0.08;
+                    speed += 0.05;
                 }
             });
 
@@ -151,33 +175,33 @@
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // プレイヤー
-            ctx.drawImage(imgP, player.x, player.y, player.width, player.height);
+            // プレイヤー描画（読み込み完了後のみ表示）
+            if(pLoaded) ctx.drawImage(imgP, player.x, player.y, player.width, player.height);
 
-            // 障害物
+            // 障害物描画
             obstacles.forEach(o => {
-                ctx.drawImage(imgB, o.x, o.y, o.w, o.h);
+                 if(bLoaded) ctx.drawImage(imgB, o.x, o.y, o.w, o.h);
             });
 
             if (!gameActive && gameStarted) {
-                ctx.fillStyle = "rgba(0,0,0,0.8)";
+                ctx.fillStyle = "rgba(0,0,0,0.85)";
                 ctx.fillRect(0,0,canvas.width, canvas.height);
                 ctx.fillStyle = "white"; ctx.textAlign = "center";
                 
-                // 中央付近に配置
                 let centerY = canvas.height / 2;
-                ctx.font = "bold 36px sans-serif";
-                ctx.fillText("試合終了！", canvas.width/2, centerY - 60);
+                ctx.font = "bold 32px sans-serif";
+                ctx.fillText("試合終了！", canvas.width/2, centerY - 50);
                 
-                ctx.font = "bold 44px sans-serif";
-                ctx.fillStyle = "#ffcc00"; // スコアを目立たせる色
-                ctx.fillText("Score: " + score, canvas.width/2, centerY);
+                ctx.font = "bold 48px sans-serif";
+                ctx.fillStyle = "#ffcc00";
+                ctx.fillText(score, canvas.width/2, centerY + 10);
+                ctx.font = "20px sans-serif"; ctx.fillStyle = "#fff";
+                ctx.fillText("Score", canvas.width/2, centerY - 25);
+
+                ctx.font = "16px sans-serif";
+                ctx.fillText("このスコアをグッズショップ入口で教えてね！", canvas.width/2, centerY + 60);
                 
-                ctx.fillStyle = "white";
                 ctx.font = "18px sans-serif";
-                ctx.fillText("このスコアをグッズショップ入口で教えてね！", canvas.width/2, centerY + 50);
-                
-                ctx.font = "20px sans-serif";
                 ctx.fillText("▼ タップしてリトライ ▼", canvas.width/2, centerY + 110);
             }
         }
