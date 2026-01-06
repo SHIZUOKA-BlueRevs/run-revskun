@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>チーム公式ミニゲーム</title>
+    <style>
+        /* 画面いっぱいに表示する設定 */
+        body { margin: 0; padding: 0; overflow: hidden; background: #eee; font-family: sans-serif; }
+        canvas { display: block; background: #fff; width: 100vw; height: auto; touch-action: manipulation; }
+        
+        /* スコアの文字を大きく */
+        #scoreDisplay {
+            position: absolute; top: 10px; left: 20px;
+            font-size: 30px; font-weight: bold; color: #333;
+        }
+
+        /* 横向き推奨メッセージ（縦の時だけ表示） */
+        @media screen and (orientation: portrait) {
+            #orientation-msg { display: flex; }
+        }
+        #orientation-msg {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); color: white;
+            justify-content: center; align-items: center; text-align: center; z-index: 100;
+            font-size: 20px; padding: 20px; box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+    <div id="orientation-msg">📱 画面を【横向き】にすると<br>大きく表示されて遊びやすいですよ！</div>
+    <div id="scoreDisplay">Score: 0</div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // 画面サイズに合わせて調整
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        let score = 0;
+        let gameActive = true;
+        let gameSpeed = canvas.width / 100; // 画面幅に合わせた速度
+
+        // キャラクターも大きめに設定（老眼対応）
+        const player = {
+            x: 50, y: 0, 
+            width: 80, height: 80, // サイズアップ！
+            color: "#E60012", // チームカラー例
+            dy: 0, jumpForce: 15, gravity: 0.8, grounded: false
+        };
+
+        let obstacles = [];
+        function spawnObstacle() {
+            if (!gameActive) return;
+            const size = 60 + Math.random() * 40; // 障害物も大きく
+            obstacles.push({
+                x: canvas.width, y: canvas.height - size - 20,
+                width: size, height: size, color: "#333"
+            });
+            setTimeout(spawnObstacle, Math.random() * 1500 + 800);
+        }
+
+        function jump() {
+            if (player.grounded && gameActive) {
+                player.dy = -player.jumpForce;
+                player.grounded = false;
+            }
+            if (!gameActive) location.reload();
+        }
+
+        window.addEventListener("touchstart", (e) => { e.preventDefault(); jump(); });
+        window.addEventListener("mousedown", jump);
+
+        function update() {
+            if (!gameActive) return;
+
+            player.dy += player.gravity;
+            player.y += player.dy;
+
+            // 地面の判定（画面の一番下から少し上に設定）
+            const groundY = canvas.height - player.height - 20;
+            if (player.y > groundY) {
+                player.y = groundY;
+                player.dy = 0;
+                player.grounded = true;
+            }
+
+            obstacles.forEach((obs, index) => {
+                obs.x -= gameSpeed;
+                // 当たり判定
+                if (player.x < obs.x + obs.width &&
+                    player.x + player.width > obs.x &&
+                    player.y < obs.y + obs.height &&
+                    player.y + player.height > obs.y) {
+                    gameActive = false;
+                }
+                if (obs.x + obs.width < 0) {
+                    obstacles.splice(index, 1);
+                    score++;
+                    document.getElementById("scoreDisplay").innerText = "Score: " + score;
+                    gameSpeed += 0.1;
+                }
+            });
+
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // 地面を描く
+            ctx.fillStyle = "#333";
+            ctx.fillRect(0, canvas.height - 20, canvas.width, 2);
+
+            // プレイヤー
+            ctx.fillStyle = player.color;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // 障害物
+            ctx.fillStyle = "#777";
+            obstacles.forEach(obs => {
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+            });
+
+            if(!gameActive) {
+                ctx.fillStyle = "rgba(0,0,0,0.7)";
+                ctx.fillRect(0,0,canvas.width, canvas.height);
+                ctx.fillStyle = "white";
+                ctx.font = "bold 40px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("ゲーム終了！", canvas.width/2, canvas.height/2);
+                ctx.font = "20px sans-serif";
+                ctx.fillText("画面をタップしてもう一度挑戦", canvas.width/2, canvas.height/2 + 60);
+            }
+        }
+
+        spawnObstacle();
+        update();
+    </script>
+</body>
+</html>
