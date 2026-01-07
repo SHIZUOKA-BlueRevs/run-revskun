@@ -10,19 +10,20 @@
             display: block; width: 100vw; height: 100vh; touch-action: none; 
             background-image: url('bg.jpg'); background-size: cover; background-position: center bottom;
         }
-        #scoreDisplay { 
-            position: absolute; top: 35px; right: 30px; 
-            font-size: 24px; font-weight: bold; color: #4ba4d7; 
-            text-shadow: 2px 2px 4px #000; z-index: 100; 
+        /* スコア表示（BESTも並べて表示） */
+        #scoreContainer { 
+            position: absolute; top: 35px; right: 30px; text-align: right;
+            z-index: 100; pointer-events: none;
         }
-        /* サウンドボタン：左下の位置を固定 */
+        #scoreDisplay { font-size: 26px; font-weight: bold; color: #4ba4d7; text-shadow: 2px 2px 4px #000; }
+        #bestDisplay { font-size: 14px; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px #000; margin-top: 2px; }
+
         #soundBtn {
             position: absolute; bottom: 25px; left: 20px;
             background: rgba(10, 49, 143, 0.8); color: white;
             border: 2px solid #4ba4d7; border-radius: 10px;
             padding: 10px 15px; font-size: 14px; font-weight: bold;
-            z-index: 101; cursor: pointer;
-            -webkit-appearance: none; /* iOS Safari用 */
+            z-index: 101; cursor: pointer; -webkit-appearance: none;
         }
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 49, 143, 0.85); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 1000; }
         #title-img { width: auto; height: auto; max-width: 65%; max-height: 40vh; margin-bottom: 10px; }
@@ -33,7 +34,12 @@
 </head>
 <body>
     <button id="soundBtn">🔊 音: ON</button>
-    <div id="scoreDisplay">Score: 0</div>
+    
+    <div id="scoreContainer">
+        <div id="scoreDisplay">Score: 0</div>
+        <div id="bestDisplay">BEST: 0</div>
+    </div>
+    
     <div id="orientation-msg" class="overlay">📱<br>画面を【横向き】にしてね！</div>
     <div id="start-screen" class="overlay">
         <img src="title.png" id="title-img">
@@ -50,6 +56,10 @@
         const sndJump = new Audio('jump.mp3'); 
         const sndDead = new Audio('dead.mp3');
         const soundBtn = document.getElementById("soundBtn");
+
+        // ハイスコアの読み込み
+        let highScore = localStorage.getItem("revsHighScore") || 0;
+        document.getElementById("bestDisplay").innerText = "BEST: " + highScore;
 
         soundBtn.addEventListener("click", (e) => {
             e.preventDefault(); e.stopPropagation();
@@ -68,20 +78,15 @@
         imgP.onload = () => pLoaded = true;
         imgB.onload = () => { bLoaded = true; bRatio = imgB.width / imgB.height; };
 
-        // プレイヤーの初期設定
         let player = { x: 0, y: 0, w: 0, h: 0, dy: 0, jump: 0, grav: 0, onG: false };
 
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
             groundY = canvas.height * 0.72;
-
             player.h = canvas.height * 0.28;
             player.w = player.h * (imgP.width / imgP.height || 1);
-            
-            // --- 【修正】レヴズくんの位置を画面の20%右へ（雲の下あたり） ---
             player.x = canvas.width * 0.2; 
-
             player.jump = canvas.height * 0.035;
             player.grav = canvas.height * 0.0015;
             isPortrait = canvas.height > canvas.width;
@@ -148,15 +153,25 @@
 
             obstacles.forEach((o, i) => {
                 o.x -= speed;
-                // 当たり判定：player.x が動的に変わっても正しく判定されるように維持
                 if (player.x + player.w*0.35 < o.x + o.w*0.65 && player.x + player.w*0.65 > o.x + o.w*0.35 &&
                     player.y + player.h*0.35 < o.y + o.h*0.65 && player.y + player.h > o.y + o.h*0.2) {
                     gameActive = false;
+                    // ゲームオーバー時にハイスコア保存
+                    if (score > highScore) {
+                        highScore = score;
+                        localStorage.setItem("revsHighScore", highScore);
+                    }
                     if (!isMuted) sndDead.play().catch(()=>{});
                 }
-                if (o.x + o.w < 0) { obstacles.splice(i, 1); score++; speed += 0.04; }
+                if (o.x + o.w < 0) { 
+                    obstacles.splice(i, 1); 
+                    score++; 
+                    // スピードアップを緩やかに (0.04 -> 0.02)
+                    speed += 0.02; 
+                }
             });
             document.getElementById("scoreDisplay").innerText = "Score: " + score;
+            document.getElementById("bestDisplay").innerText = "BEST: " + Math.max(score, highScore);
             draw();
             requestAnimationFrame(loop);
         }
@@ -171,14 +186,21 @@
                 ctx.fillRect(0,0,canvas.width, canvas.height);
                 ctx.textAlign = "center";
                 let cy = canvas.height * 0.45;
+                
                 ctx.fillStyle = "white"; ctx.font = "bold 24px sans-serif";
-                ctx.fillText("試合終了！", canvas.width/2, cy - 60);
-                ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 18px sans-serif";
-                ctx.fillText("SCORE", canvas.width/2, cy - 25);
-                ctx.font = "bold 55px sans-serif";
+                ctx.fillText("試合終了！", canvas.width/2, cy - 65);
+                
+                ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 16px sans-serif";
+                ctx.fillText("今回: " + score, canvas.width/2 - 60, cy - 25);
+                ctx.fillStyle = "#fff";
+                ctx.fillText("BEST: " + highScore, canvas.width/2 + 60, cy - 25);
+                
+                ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 55px sans-serif";
                 ctx.fillText(score, canvas.width/2, cy + 25);
+                
                 ctx.fillStyle = "white"; ctx.font = "bold 15px sans-serif";
-                ctx.fillText("このスコアをグッズショップ入口で教えてね！", canvas.width/2, cy + 70);
+                ctx.fillText("最高得点を見せてランクをチェック！", canvas.width/2, cy + 70);
+                
                 ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 18px sans-serif";
                 ctx.fillText("▼ タップしてリトライ ▼", canvas.width/2, cy + 115);
             }
