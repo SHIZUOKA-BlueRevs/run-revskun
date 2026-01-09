@@ -17,23 +17,23 @@
         #scoreDisplay { font-size: 26px; font-weight: bold; color: #4ba4d7; text-shadow: 2px 2px 4px #000; }
         #bestDisplay { font-size: 14px; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px #000; margin-top: 2px; }
 
-        /* ボタン共通スタイル */
+        /* ボタン配置：右下に集約 */
+        .controls {
+            position: absolute; bottom: 20px; right: 20px;
+            display: flex; gap: 10px; z-index: 101;
+        }
         .game-btn {
-            position: absolute; bottom: 25px;
             background: rgba(10, 49, 143, 0.8); color: white;
             border: 2px solid #4ba4d7; border-radius: 10px;
             padding: 10px 12px; font-size: 14px; font-weight: bold;
-            z-index: 101; cursor: pointer; -webkit-appearance: none;
+            cursor: pointer; -webkit-appearance: none;
         }
-        #soundBtn { left: 20px; }
-        #pauseBtn { right: 20px; }
 
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 49, 143, 0.85); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 1000; }
         #title-img { width: auto; height: auto; max-width: 65%; max-height: 40vh; margin-bottom: 10px; }
         #start-text { font-size: 20px; animation: blink 1.5s infinite; color: #4ba4d7; font-weight: bold; margin-bottom: 10px; }
         #note-text { font-size: 13px; color: #fff; opacity: 0.9; padding: 0 20px; line-height: 1.4; }
         
-        /* 一時停止中オーバレイ */
         #pause-screen { display: none; background: rgba(0,0,0,0.5); pointer-events: none; }
         #pause-screen span { font-size: 40px; background: rgba(10,49,143,0.8); padding: 20px; border-radius: 20px; border: 2px solid #4ba4d7; }
 
@@ -41,8 +41,10 @@
     </style>
 </head>
 <body>
-    <button id="soundBtn">🔇 音: OFF</button>
-    <button id="pauseBtn">⏸️ 停止</button>
+    <div class="controls">
+        <button id="soundBtn" class="game-btn">🔇 音: OFF</button>
+        <button id="pauseBtn" class="game-btn">⏸️ 一時停止</button>
+    </div>
     
     <div id="scoreContainer">
         <div id="scoreDisplay">Score: 0</div>
@@ -67,7 +69,7 @@
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
         
-        let isMuted = true; // デフォルトOFF
+        let isMuted = true; 
         let isPaused = false;
         const sndJump = new Audio('jump.mp3'); 
         const sndDead = new Audio('dead.mp3');
@@ -78,7 +80,6 @@
         let highScore = localStorage.getItem("revsHighScore") || 0;
         document.getElementById("bestDisplay").innerText = "BEST: " + highScore;
 
-        // サウンドボタン
         soundBtn.addEventListener("click", (e) => {
             e.preventDefault(); e.stopPropagation();
             isMuted = !isMuted;
@@ -86,7 +87,6 @@
         });
         soundBtn.addEventListener("touchstart", (e) => { e.stopPropagation(); }, {passive: false});
 
-        // 一時停止ボタン
         pauseBtn.addEventListener("click", (e) => {
             e.preventDefault(); e.stopPropagation();
             togglePause();
@@ -96,7 +96,7 @@
         function togglePause() {
             if(!gameActive || !gameStarted) return;
             isPaused = !isPaused;
-            pauseBtn.innerText = isPaused ? "▶️ 再開" : "⏸️ 停止";
+            pauseBtn.innerText = isPaused ? "▶️ 再開" : "⏸️ 一時停止";
             pauseScreen.style.display = isPaused ? "flex" : "none";
         }
 
@@ -131,11 +131,10 @@
 
         function spawnManager() {
             if (!gameActive) return;
-            if (isPaused) { // 一時停止中は次を予約せず待つ
+            if (isPaused) { 
                 setTimeout(spawnManager, 500);
                 return;
             }
-
             let baseH = player.h * 0.75;
             let baseW = baseH * bRatio;
             obstacles.push({ x: canvas.width, y: groundY - baseH, w: baseW, h: baseH });
@@ -158,14 +157,20 @@
             score = 0; obstacles = []; 
             speed = canvas.width / 115; 
             player.y = groundY - player.h;
-            sndJump.play().then(() => { sndJump.pause(); }).catch(()=>{});
+            
+            // ミュート状態を考慮して初期化
+            if (!isMuted) {
+                sndJump.play().then(() => { sndJump.pause(); }).catch(()=>{});
+            }
+            
             spawnManager(); 
             loop();
         }
 
         function action(e) {
-            if (e.target.id === "soundBtn" || e.target.id === "pauseBtn") return;
-            if (isPaused) return; // 一時停止中はジャンプ不可
+            // controlsクラス内のボタンクリックを無視
+            if (e.target.closest('.controls')) return;
+            if (isPaused) return; 
             
             if (e && e.cancelable) e.preventDefault();
             if (isPortrait) return;
@@ -185,7 +190,6 @@
 
         function loop() {
             if (!gameActive) return;
-            
             if (!isPaused) {
                 player.dy += player.grav;
                 player.y += player.dy;
@@ -208,7 +212,6 @@
                 document.getElementById("scoreDisplay").innerText = "Score: " + score;
                 document.getElementById("bestDisplay").innerText = "BEST: " + Math.max(score, highScore);
             }
-            
             draw();
             requestAnimationFrame(loop);
         }
