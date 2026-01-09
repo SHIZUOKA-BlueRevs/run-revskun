@@ -17,22 +17,21 @@
         #scoreDisplay { font-size: 26px; font-weight: bold; color: #4ba4d7; text-shadow: 2px 2px 4px #000; }
         #bestDisplay { font-size: 14px; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px #000; margin-top: 2px; }
 
-        /* ボタン配置：右下に集約 */
-        .controls {
-            position: absolute; bottom: 20px; right: 20px;
-            display: flex; gap: 10px; z-index: 101;
-        }
+        /* ボタン配置：左右に分離し、より下端へ配置 */
         .game-btn {
-            background: rgba(10, 49, 143, 0.8); color: white;
-            border: 2px solid #4ba4d7; border-radius: 10px;
-            padding: 10px 12px; font-size: 14px; font-weight: bold;
-            cursor: pointer; -webkit-appearance: none;
+            position: absolute; bottom: 15px; /* 敵と被らないようさらに下へ */
+            background: rgba(10, 49, 143, 0.85); color: white;
+            border: 2px solid #4ba4d7; border-radius: 8px;
+            padding: 8px 10px; font-size: 13px; font-weight: bold;
+            z-index: 101; cursor: pointer; -webkit-appearance: none;
         }
+        #soundBtn { left: 15px; }
+        #pauseBtn { right: 15px; }
 
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 49, 143, 0.85); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 1000; }
         #title-img { width: auto; height: auto; max-width: 65%; max-height: 40vh; margin-bottom: 10px; }
         #start-text { font-size: 20px; animation: blink 1.5s infinite; color: #4ba4d7; font-weight: bold; margin-bottom: 10px; }
-        #note-text { font-size: 13px; color: #fff; opacity: 0.9; padding: 0 20px; line-height: 1.4; }
+        #note-text { font-size: 12px; color: #fff; opacity: 0.9; padding: 0 20px; line-height: 1.4; }
         
         #pause-screen { display: none; background: rgba(0,0,0,0.5); pointer-events: none; }
         #pause-screen span { font-size: 40px; background: rgba(10,49,143,0.8); padding: 20px; border-radius: 20px; border: 2px solid #4ba4d7; }
@@ -41,10 +40,8 @@
     </style>
 </head>
 <body>
-    <div class="controls">
-        <button id="soundBtn" class="game-btn">🔇 音: OFF</button>
-        <button id="pauseBtn" class="game-btn">⏸️ 一時停止</button>
-    </div>
+    <button id="soundBtn" class="game-btn">🔇 音: OFF</button>
+    <button id="pauseBtn" class="game-btn">⏸️ 一時停止</button>
     
     <div id="scoreContainer">
         <div id="scoreDisplay">Score: 0</div>
@@ -80,18 +77,21 @@
         let highScore = localStorage.getItem("revsHighScore") || 0;
         document.getElementById("bestDisplay").innerText = "BEST: " + highScore;
 
+        // イベント伝播停止の共通処理
+        function stopProp(e) { e.preventDefault(); e.stopPropagation(); }
+
         soundBtn.addEventListener("click", (e) => {
-            e.preventDefault(); e.stopPropagation();
+            stopProp(e);
             isMuted = !isMuted;
             soundBtn.innerText = isMuted ? "🔇 音: OFF" : "🔊 音: ON";
         });
-        soundBtn.addEventListener("touchstart", (e) => { e.stopPropagation(); }, {passive: false});
+        soundBtn.addEventListener("touchstart", stopProp, {passive: false});
 
         pauseBtn.addEventListener("click", (e) => {
-            e.preventDefault(); e.stopPropagation();
+            stopProp(e);
             togglePause();
         });
-        pauseBtn.addEventListener("touchstart", (e) => { e.stopPropagation(); }, {passive: false});
+        pauseBtn.addEventListener("touchstart", stopProp, {passive: false});
 
         function togglePause() {
             if(!gameActive || !gameStarted) return;
@@ -157,19 +157,16 @@
             score = 0; obstacles = []; 
             speed = canvas.width / 115; 
             player.y = groundY - player.h;
-            
-            // ミュート状態を考慮して初期化
             if (!isMuted) {
                 sndJump.play().then(() => { sndJump.pause(); }).catch(()=>{});
             }
-            
             spawnManager(); 
             loop();
         }
 
         function action(e) {
-            // controlsクラス内のボタンクリックを無視
-            if (e.target.closest('.controls')) return;
+            // ID指定でボタン自体のクリックを完全に除外
+            if (e.target.id === "soundBtn" || e.target.id === "pauseBtn") return;
             if (isPaused) return; 
             
             if (e && e.cancelable) e.preventDefault();
