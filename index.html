@@ -10,7 +10,6 @@
             display: block; width: 100vw; height: 100vh; touch-action: none; 
             background-image: url('bg.jpg'); background-size: cover; background-position: center bottom;
         }
-        /* スコア表示（BESTも並べて表示） */
         #scoreContainer { 
             position: absolute; top: 35px; right: 30px; text-align: right;
             z-index: 100; pointer-events: none;
@@ -18,22 +17,32 @@
         #scoreDisplay { font-size: 26px; font-weight: bold; color: #4ba4d7; text-shadow: 2px 2px 4px #000; }
         #bestDisplay { font-size: 14px; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px #000; margin-top: 2px; }
 
-        #soundBtn {
-            position: absolute; bottom: 25px; left: 20px;
+        /* ボタン共通スタイル */
+        .game-btn {
+            position: absolute; bottom: 25px;
             background: rgba(10, 49, 143, 0.8); color: white;
             border: 2px solid #4ba4d7; border-radius: 10px;
-            padding: 10px 15px; font-size: 14px; font-weight: bold;
+            padding: 10px 12px; font-size: 14px; font-weight: bold;
             z-index: 101; cursor: pointer; -webkit-appearance: none;
         }
+        #soundBtn { left: 20px; }
+        #pauseBtn { right: 20px; }
+
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 49, 143, 0.85); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 1000; }
         #title-img { width: auto; height: auto; max-width: 65%; max-height: 40vh; margin-bottom: 10px; }
         #start-text { font-size: 20px; animation: blink 1.5s infinite; color: #4ba4d7; font-weight: bold; margin-bottom: 10px; }
-        #sound-note { font-size: 13px; color: #fff; opacity: 0.8; }
+        #note-text { font-size: 13px; color: #fff; opacity: 0.9; padding: 0 20px; line-height: 1.4; }
+        
+        /* 一時停止中オーバレイ */
+        #pause-screen { display: none; background: rgba(0,0,0,0.5); pointer-events: none; }
+        #pause-screen span { font-size: 40px; background: rgba(10,49,143,0.8); padding: 20px; border-radius: 20px; border: 2px solid #4ba4d7; }
+
         @keyframes blink { 0%, 100% {opacity: 1;} 50% {opacity: 0.4;} }
     </style>
 </head>
 <body>
-    <button id="soundBtn">🔊 音: ON</button>
+    <button id="soundBtn">🔇 音: OFF</button>
+    <button id="pauseBtn">⏸️ 停止</button>
     
     <div id="scoreContainer">
         <div id="scoreDisplay">Score: 0</div>
@@ -41,32 +50,55 @@
     </div>
     
     <div id="orientation-msg" class="overlay">📱<br>画面を【横向き】にしてね！</div>
+    
     <div id="start-screen" class="overlay">
         <img src="title.png" id="title-img">
         <p id="start-text">画面をタップしてスタート！</p>
-        <p id="sound-note">※音が出ます。ご注意ください</p>
+        <p id="note-text">列が進んだら、ゲームを一時停止して進んでください</p>
     </div>
+
+    <div id="pause-screen" class="overlay">
+        <span>PAUSE</span>
+    </div>
+
     <canvas id="gameCanvas"></canvas>
 
     <script>
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
         
-        let isMuted = false;
+        let isMuted = true; // デフォルトOFF
+        let isPaused = false;
         const sndJump = new Audio('jump.mp3'); 
         const sndDead = new Audio('dead.mp3');
         const soundBtn = document.getElementById("soundBtn");
+        const pauseBtn = document.getElementById("pauseBtn");
+        const pauseScreen = document.getElementById("pause-screen");
 
-        // ハイスコアの読み込み
         let highScore = localStorage.getItem("revsHighScore") || 0;
         document.getElementById("bestDisplay").innerText = "BEST: " + highScore;
 
+        // サウンドボタン
         soundBtn.addEventListener("click", (e) => {
             e.preventDefault(); e.stopPropagation();
             isMuted = !isMuted;
             soundBtn.innerText = isMuted ? "🔇 音: OFF" : "🔊 音: ON";
         });
         soundBtn.addEventListener("touchstart", (e) => { e.stopPropagation(); }, {passive: false});
+
+        // 一時停止ボタン
+        pauseBtn.addEventListener("click", (e) => {
+            e.preventDefault(); e.stopPropagation();
+            togglePause();
+        });
+        pauseBtn.addEventListener("touchstart", (e) => { e.stopPropagation(); }, {passive: false});
+
+        function togglePause() {
+            if(!gameActive || !gameStarted) return;
+            isPaused = !isPaused;
+            pauseBtn.innerText = isPaused ? "▶️ 再開" : "⏸️ 停止";
+            pauseScreen.style.display = isPaused ? "flex" : "none";
+        }
 
         const imgP = new Image(); imgP.src = 'player.png';
         const imgB = new Image(); imgB.src = 'ball.png';
@@ -99,6 +131,11 @@
 
         function spawnManager() {
             if (!gameActive) return;
+            if (isPaused) { // 一時停止中は次を予約せず待つ
+                setTimeout(spawnManager, 500);
+                return;
+            }
+
             let baseH = player.h * 0.75;
             let baseW = baseH * bRatio;
             obstacles.push({ x: canvas.width, y: groundY - baseH, w: baseW, h: baseH });
@@ -127,7 +164,9 @@
         }
 
         function action(e) {
-            if (e.target.id === "soundBtn") return;
+            if (e.target.id === "soundBtn" || e.target.id === "pauseBtn") return;
+            if (isPaused) return; // 一時停止中はジャンプ不可
+            
             if (e && e.cancelable) e.preventDefault();
             if (isPortrait) return;
             if (!gameStarted) doStart();
@@ -146,32 +185,30 @@
 
         function loop() {
             if (!gameActive) return;
-            player.dy += player.grav;
-            player.y += player.dy;
-            let floor = groundY - player.h;
-            if (player.y > floor) { player.y = floor; player.dy = 0; player.onG = true; }
+            
+            if (!isPaused) {
+                player.dy += player.grav;
+                player.y += player.dy;
+                let floor = groundY - player.h;
+                if (player.y > floor) { player.y = floor; player.dy = 0; player.onG = true; }
 
-            obstacles.forEach((o, i) => {
-                o.x -= speed;
-                if (player.x + player.w*0.35 < o.x + o.w*0.65 && player.x + player.w*0.65 > o.x + o.w*0.35 &&
-                    player.y + player.h*0.35 < o.y + o.h*0.65 && player.y + player.h > o.y + o.h*0.2) {
-                    gameActive = false;
-                    // ゲームオーバー時にハイスコア保存
-                    if (score > highScore) {
-                        highScore = score;
-                        localStorage.setItem("revsHighScore", highScore);
+                obstacles.forEach((o, i) => {
+                    o.x -= speed;
+                    if (player.x + player.w*0.35 < o.x + o.w*0.65 && player.x + player.w*0.65 > o.x + o.w*0.35 &&
+                        player.y + player.h*0.35 < o.y + o.h*0.65 && player.y + player.h > o.y + o.h*0.2) {
+                        gameActive = false;
+                        if (score > highScore) {
+                            highScore = score;
+                            localStorage.setItem("revsHighScore", highScore);
+                        }
+                        if (!isMuted) sndDead.play().catch(()=>{});
                     }
-                    if (!isMuted) sndDead.play().catch(()=>{});
-                }
-                if (o.x + o.w < 0) { 
-                    obstacles.splice(i, 1); 
-                    score++; 
-                    // スピードアップを緩やかに (0.04 -> 0.02)
-                    speed += 0.02; 
-                }
-            });
-            document.getElementById("scoreDisplay").innerText = "Score: " + score;
-            document.getElementById("bestDisplay").innerText = "BEST: " + Math.max(score, highScore);
+                    if (o.x + o.w < 0) { obstacles.splice(i, 1); score++; speed += 0.02; }
+                });
+                document.getElementById("scoreDisplay").innerText = "Score: " + score;
+                document.getElementById("bestDisplay").innerText = "BEST: " + Math.max(score, highScore);
+            }
+            
             draw();
             requestAnimationFrame(loop);
         }
@@ -186,21 +223,16 @@
                 ctx.fillRect(0,0,canvas.width, canvas.height);
                 ctx.textAlign = "center";
                 let cy = canvas.height * 0.45;
-                
                 ctx.fillStyle = "white"; ctx.font = "bold 24px sans-serif";
                 ctx.fillText("試合終了！", canvas.width/2, cy - 65);
-                
                 ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 16px sans-serif";
                 ctx.fillText("今回: " + score, canvas.width/2 - 60, cy - 25);
                 ctx.fillStyle = "#fff";
                 ctx.fillText("BEST: " + highScore, canvas.width/2 + 60, cy - 25);
-                
                 ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 55px sans-serif";
                 ctx.fillText(score, canvas.width/2, cy + 25);
-                
                 ctx.fillStyle = "white"; ctx.font = "bold 15px sans-serif";
                 ctx.fillText("最高得点を見せてランクをチェック！", canvas.width/2, cy + 70);
-                
                 ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 18px sans-serif";
                 ctx.fillText("▼ タップしてリトライ ▼", canvas.width/2, cy + 115);
             }
