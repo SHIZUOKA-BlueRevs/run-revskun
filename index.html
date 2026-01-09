@@ -11,30 +11,31 @@
             background-image: url('bg.jpg'); background-size: cover; background-position: center bottom;
         }
         #scoreContainer { 
-            position: absolute; top: 35px; right: 30px; text-align: right;
+            position: absolute; top: 30px; right: 25px; text-align: right;
             z-index: 100; pointer-events: none;
         }
-        #scoreDisplay { font-size: 26px; font-weight: bold; color: #4ba4d7; text-shadow: 2px 2px 4px #000; }
+        #scoreDisplay { font-size: 24px; font-weight: bold; color: #4ba4d7; text-shadow: 2px 2px 4px #000; }
         #bestDisplay { font-size: 14px; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px #000; margin-top: 2px; }
 
-        /* ボタン配置：左右に分離し、より下端へ配置 */
+        /* ボタン：Safariの重なりを考慮し、より下端へ。かつタップしやすく調整 */
         .game-btn {
-            position: absolute; bottom: 15px; /* 敵と被らないようさらに下へ */
-            background: rgba(10, 49, 143, 0.85); color: white;
+            position: absolute; bottom: 12px; /* 敵の足元を避けるためさらに下げ */
+            background: rgba(10, 49, 143, 0.95); color: white;
             border: 2px solid #4ba4d7; border-radius: 8px;
-            padding: 8px 10px; font-size: 13px; font-weight: bold;
-            z-index: 101; cursor: pointer; -webkit-appearance: none;
+            padding: 8px 12px; font-size: 13px; font-weight: bold;
+            z-index: 5000; cursor: pointer; -webkit-appearance: none;
+            touch-action: none; /* ブラウザのデフォルト動作を完全に抑制 */
         }
         #soundBtn { left: 15px; }
         #pauseBtn { right: 15px; }
 
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 49, 143, 0.85); color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 1000; }
         #title-img { width: auto; height: auto; max-width: 65%; max-height: 40vh; margin-bottom: 10px; }
-        #start-text { font-size: 20px; animation: blink 1.5s infinite; color: #4ba4d7; font-weight: bold; margin-bottom: 10px; }
-        #note-text { font-size: 12px; color: #fff; opacity: 0.9; padding: 0 20px; line-height: 1.4; }
+        #start-text { font-size: 18px; animation: blink 1.5s infinite; color: #4ba4d7; font-weight: bold; margin-bottom: 10px; }
+        #note-text { font-size: 11px; color: #fff; opacity: 0.9; padding: 0 20px; line-height: 1.4; }
         
         #pause-screen { display: none; background: rgba(0,0,0,0.5); pointer-events: none; }
-        #pause-screen span { font-size: 40px; background: rgba(10,49,143,0.8); padding: 20px; border-radius: 20px; border: 2px solid #4ba4d7; }
+        #pause-screen span { font-size: 36px; background: rgba(10,49,143,0.8); padding: 20px; border-radius: 20px; border: 2px solid #4ba4d7; }
 
         @keyframes blink { 0%, 100% {opacity: 1;} 50% {opacity: 0.4;} }
     </style>
@@ -77,28 +78,23 @@
         let highScore = localStorage.getItem("revsHighScore") || 0;
         document.getElementById("bestDisplay").innerText = "BEST: " + highScore;
 
-        // イベント伝播停止の共通処理
-        function stopProp(e) { e.preventDefault(); e.stopPropagation(); }
-
-        soundBtn.addEventListener("click", (e) => {
-            stopProp(e);
+        // ボタン専用のイベントリスナー（pointerdownで即時反応）
+        const handleSound = (e) => {
+            e.preventDefault(); e.stopPropagation();
             isMuted = !isMuted;
             soundBtn.innerText = isMuted ? "🔇 音: OFF" : "🔊 音: ON";
-        });
-        soundBtn.addEventListener("touchstart", stopProp, {passive: false});
+        };
 
-        pauseBtn.addEventListener("click", (e) => {
-            stopProp(e);
-            togglePause();
-        });
-        pauseBtn.addEventListener("touchstart", stopProp, {passive: false});
-
-        function togglePause() {
+        const handlePause = (e) => {
+            e.preventDefault(); e.stopPropagation();
             if(!gameActive || !gameStarted) return;
             isPaused = !isPaused;
             pauseBtn.innerText = isPaused ? "▶️ 再開" : "⏸️ 一時停止";
             pauseScreen.style.display = isPaused ? "flex" : "none";
-        }
+        };
+
+        soundBtn.addEventListener("pointerdown", handleSound);
+        pauseBtn.addEventListener("pointerdown", handlePause);
 
         const imgP = new Image(); imgP.src = 'player.png';
         const imgB = new Image(); imgB.src = 'ball.png';
@@ -131,10 +127,7 @@
 
         function spawnManager() {
             if (!gameActive) return;
-            if (isPaused) { 
-                setTimeout(spawnManager, 500);
-                return;
-            }
+            if (isPaused) { setTimeout(spawnManager, 500); return; }
             let baseH = player.h * 0.75;
             let baseW = baseH * bRatio;
             obstacles.push({ x: canvas.width, y: groundY - baseH, w: baseW, h: baseH });
@@ -157,15 +150,12 @@
             score = 0; obstacles = []; 
             speed = canvas.width / 115; 
             player.y = groundY - player.h;
-            if (!isMuted) {
-                sndJump.play().then(() => { sndJump.pause(); }).catch(()=>{});
-            }
             spawnManager(); 
             loop();
         }
 
         function action(e) {
-            // ID指定でボタン自体のクリックを完全に除外
+            // ボタンが押された場合は無視する
             if (e.target.id === "soundBtn" || e.target.id === "pauseBtn") return;
             if (isPaused) return; 
             
@@ -182,8 +172,8 @@
             }
         }
 
-        window.addEventListener('touchstart', action, {passive: false});
-        window.addEventListener('mousedown', (e) => { if(e.button===0) action(e); });
+        // ゲーム画面全体の操作
+        window.addEventListener('pointerdown', action, {passive: false});
 
         function loop() {
             if (!gameActive) return;
