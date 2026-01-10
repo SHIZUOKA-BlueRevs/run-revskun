@@ -17,14 +17,14 @@
         #scoreDisplay { font-size: 24px; font-weight: bold; color: #4ba4d7; text-shadow: 2px 2px 4px #000; }
         #bestDisplay { font-size: 14px; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px #000; margin-top: 2px; }
 
-        /* ボタン：Safariの重なりを考慮し、より下端へ。かつタップしやすく調整 */
+        /* ボタン配置：左右に分離。Safari対策で位置とz-indexを最適化 */
         .game-btn {
-            position: absolute; bottom: 12px; /* 敵の足元を避けるためさらに下げ */
+            position: absolute; bottom: 12px;
             background: rgba(10, 49, 143, 0.95); color: white;
             border: 2px solid #4ba4d7; border-radius: 8px;
             padding: 8px 12px; font-size: 13px; font-weight: bold;
             z-index: 5000; cursor: pointer; -webkit-appearance: none;
-            touch-action: none; /* ブラウザのデフォルト動作を完全に抑制 */
+            touch-action: none;
         }
         #soundBtn { left: 15px; }
         #pauseBtn { right: 15px; }
@@ -78,23 +78,20 @@
         let highScore = localStorage.getItem("revsHighScore") || 0;
         document.getElementById("bestDisplay").innerText = "BEST: " + highScore;
 
-        // ボタン専用のイベントリスナー（pointerdownで即時反応）
-        const handleSound = (e) => {
+        // ボタン操作を最優先で処理
+        soundBtn.addEventListener("pointerdown", (e) => {
             e.preventDefault(); e.stopPropagation();
             isMuted = !isMuted;
             soundBtn.innerText = isMuted ? "🔇 音: OFF" : "🔊 音: ON";
-        };
+        });
 
-        const handlePause = (e) => {
+        pauseBtn.addEventListener("pointerdown", (e) => {
             e.preventDefault(); e.stopPropagation();
             if(!gameActive || !gameStarted) return;
             isPaused = !isPaused;
             pauseBtn.innerText = isPaused ? "▶️ 再開" : "⏸️ 一時停止";
             pauseScreen.style.display = isPaused ? "flex" : "none";
-        };
-
-        soundBtn.addEventListener("pointerdown", handleSound);
-        pauseBtn.addEventListener("pointerdown", handlePause);
+        });
 
         const imgP = new Image(); imgP.src = 'player.png';
         const imgB = new Image(); imgB.src = 'ball.png';
@@ -148,14 +145,14 @@
             gameStarted = true; gameActive = true;
             document.getElementById("start-screen").style.display = "none";
             score = 0; obstacles = []; 
-            speed = canvas.width / 115; 
+            speed = canvas.width / 115; // 初期スピード
             player.y = groundY - player.h;
             spawnManager(); 
             loop();
         }
 
         function action(e) {
-            // ボタンが押された場合は無視する
+            // ボタンが押された場合は何もしない
             if (e.target.id === "soundBtn" || e.target.id === "pauseBtn") return;
             if (isPaused) return; 
             
@@ -164,15 +161,20 @@
             if (!gameStarted) doStart();
             else if (!gameActive) location.reload();
             else if (player.onG) {
-                player.dy = -player.jump; player.onG = false;
+                // ジャンプ物理
+                player.dy = -player.jump; 
+                player.onG = false;
+
+                // サウンドのキレ改善：巻き戻して再生
                 if (!isMuted) {
-                    let s = sndJump.cloneNode(true);
-                    s.volume = 0.5; s.play().catch(()=>{});
+                    sndJump.pause();
+                    sndJump.currentTime = 0;
+                    sndJump.volume = 0.5;
+                    sndJump.play().catch(()=>{});
                 }
             }
         }
 
-        // ゲーム画面全体の操作
         window.addEventListener('pointerdown', action, {passive: false});
 
         function loop() {
@@ -185,8 +187,13 @@
 
                 obstacles.forEach((o, i) => {
                     o.x -= speed;
-                    if (player.x + player.w*0.35 < o.x + o.w*0.65 && player.x + player.w*0.65 > o.x + o.w*0.35 &&
-                        player.y + player.h*0.35 < o.y + o.h*0.65 && player.y + player.h > o.y + o.h*0.2) {
+                    
+                    // 当たり判定の緩和：20%のバリア
+                    let hitGap = o.w * 0.2; 
+                    if (player.x + player.w*0.4 < o.x + o.w - hitGap && 
+                        player.x + player.w*0.6 > o.x + hitGap &&
+                        player.y + player.h*0.4 < o.y + o.h - hitGap && 
+                        player.y + player.h > o.y + hitGap) {
                         gameActive = false;
                         if (score > highScore) {
                             highScore = score;
@@ -194,7 +201,24 @@
                         }
                         if (!isMuted) sndDead.play().catch(()=>{});
                     }
-                    if (o.x + o.w < 0) { obstacles.splice(i, 1); score++; speed += 0.02; }
+
+                    if (o.x + o.w < 0) { 
+                        obstacles.splice(i, 1); 
+                        score++; 
+                        
+                        // 階段状難易度設計
+                        if (score <= 15) {
+                            speed += 0.03; // 最初は加速
+                        } else if (score > 15 && score <= 35) {
+                            // 16〜35点はスピード固定（踊り場）
+                        } else if (score > 35 && score <= 45) {
+                            speed += 0.04; // 36点から急加速
+                        } else if (score > 45 && score <= 65) {
+                            // 46〜65点は超高速固定（達人ゾーン）
+                        } else {
+                            speed += 0.01; // それ以降は限界まで微増
+                        }
+                    }
                 });
                 document.getElementById("scoreDisplay").innerText = "Score: " + score;
                 document.getElementById("bestDisplay").innerText = "BEST: " + Math.max(score, highScore);
