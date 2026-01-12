@@ -74,15 +74,22 @@
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV5Y21vdmh1YXdqbmVvaWN2ZHBiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgxOTc4MzIsImV4cCI6MjA4Mzc3MzgzMn0.vQnxkNO9xNk2g1Yxs3nHVchgzU1FK_SHuCI9dVGNTjQ';
         
         let _supabase;
-        try { _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch (e) {}
+        window.onload = () => {
+            try { 
+                _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY); 
+            } catch (e) { console.error("Supabase load error"); }
+        };
 
         async function saveGameLog(fScore, bScore) {
             if (!_supabase) return;
-            try { await _supabase.from('game_logs').insert([{ score: fScore, high_score: bScore }]); } catch (e) {}
+            try { 
+                await _supabase.from('game_logs').insert([{ score: fScore, high_score: bScore }]); 
+            } catch (e) { console.warn("Log skip"); }
         }
 
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
+        
         let isMuted = true, isPaused = false, score = 0, gameActive = false, gameStarted = false, isPortrait = false;
         let speed = 0, obstacles = [], groundY = 0, pLoaded = false, bLoaded = false, bRatio = 1;
         const JUMP_SOUND_PATH = 'jump.mp3', DEAD_SOUND_PATH = 'dead.mp3';
@@ -102,9 +109,8 @@
             player.w = player.h * (imgP.width / imgP.height || 1);
             player.x = canvas.width * 0.2; 
             
-            // ★キレのあるジャンプ設定（初期の良さを再現）★
-            player.jump = canvas.height * 0.042; 
-            player.grav = canvas.height * 0.0022; 
+            player.jump = canvas.height * 0.043; 
+            player.grav = canvas.height * 0.0023; 
             
             isPortrait = canvas.height > canvas.width;
             document.getElementById("orientation-msg").style.display = isPortrait ? "flex" : "none";
@@ -118,17 +124,16 @@
             let baseH = player.h * 0.75, baseW = baseH * bRatio;
             obstacles.push({ x: canvas.width, y: groundY - baseH, w: baseW, h: baseH });
             
-            // リズム設定（適度なランダム性と、確実な隙間を確保）
-            let nextWait = score < 10 ? 2100 : 1800 - Math.min((score - 10) * 45, 1200) + (Math.random() - 0.5) * 400;
-            setTimeout(spawnManager, Math.max(nextWait, 750));
+            let waitBase = score < 35 ? 2000 : 1600;
+            let nextWait = waitBase - Math.min(score * 10, 800) + (Math.random() - 0.5) * 400;
+            setTimeout(spawnManager, Math.max(nextWait, 850));
         }
 
         function doStart() {
             gameStarted = true; gameActive = true;
             document.getElementById("start-screen").style.display = "none";
             score = 0; obstacles = []; 
-            // 初速を少しマイルドに（幼稚園児対応）
-            speed = canvas.width / 145; 
+            speed = canvas.width / 150; 
             player.y = groundY - player.h; spawnManager(); loop();
         }
 
@@ -165,10 +170,16 @@
                 obstacles.forEach((o, i) => {
                     o.x -= speed;
                     
-                    // 当たり判定：プレイヤーの中心付近に絞り、直感的に
-                    let hitW = o.w * 0.65, hitH = o.h * 0.65;
-                    let ox = o.x + (o.w - hitW)/2, oy = o.y + (o.h - hitH)/2;
-                    let px = player.x + player.w * 0.25, pw = player.w * 0.5, py = player.y + player.h * 0.1, ph = player.h * 0.8;
+                    // ★当たり判定の「神回避」調整（煙はセーフ版）★
+                    let hitW = o.w * 0.42; 
+                    let hitH = o.h * 0.55;
+                    let ox = o.x + o.w * 0.05; 
+                    let oy = o.y + o.h * 0.25;
+
+                    let px = player.x + player.w * 0.35;
+                    let pw = player.w * 0.3;
+                    let py = player.y + player.h * 0.2;
+                    let ph = player.h * 0.7;
 
                     if (px < ox + hitW && px + pw > ox && py < oy + hitH && py + ph > oy) {
                         if (!isMuted) { const d = new Audio(DEAD_SOUND_PATH); d.play().catch(()=>{}); }
@@ -176,13 +187,13 @@
                         saveGameLog(score, Math.max(score, localStorage.getItem("revsHighScore") || 0));
                         if (score > (localStorage.getItem("revsHighScore") || 0)) localStorage.setItem("revsHighScore", score);
                     }
+
                     if (o.x + o.w < 0) { 
                         obstacles.splice(i, 1); score++; 
-                        // ★加速の壁設定★
-                        if (score <= 15) speed += 0.02; // 序盤：ゆっくり
-                        else if (score > 15 && score <= 35) speed += 0.01; // 中盤：少しずつ
-                        else if (score > 35 && score <= 75) speed += 0.045; // 35点から急加速！
-                        else speed += 0.01; // 75点以降：さらにじわじわ速く
+                        if (score <= 35) speed += 0.012; 
+                        else if (score <= 60) speed += 0.028; 
+                        else if (score <= 85) speed += 0.048; 
+                        else speed += 0.07; 
                     }
                 });
                 document.getElementById("scoreDisplay").innerText = "Score: " + score;
