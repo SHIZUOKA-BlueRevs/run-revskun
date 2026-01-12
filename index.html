@@ -72,12 +72,19 @@
         // --- Supabase設定 ---
         const SUPABASE_URL = 'https://uycmovhuawjneoicvdpb.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV5Y21vdmh1YXdqbmVvaWN2ZHBiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgxOTc4MzIsImV4cCI6MjA4Mzc3MzgzMn0.vQnxkNO9xNk2g1Yxs3nHVchgzU1FK_SHuCI9dVGNTjQ';
-        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        let _supabase;
+        try {
+            _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        } catch (e) {
+            console.error("Supabase init error:", e);
+        }
 
         async function saveGameLog(fScore, bScore) {
+            if (!_supabase) return;
             try { 
                 await _supabase.from('game_logs').insert([{ score: fScore, high_score: bScore }]); 
-            } catch (e) { console.error('Supabase Error:', e); }
+            } catch (e) { console.error('Log save failed:', e); }
         }
 
         const canvas = document.getElementById("gameCanvas");
@@ -102,9 +109,9 @@
             player.w = player.h * (imgP.width / imgP.height || 1);
             player.x = canvas.width * 0.2; 
             
-            // クイックな物理挙動
-            player.jump = canvas.height * 0.055; 
-            player.grav = canvas.height * 0.0038; 
+            // ★以前の「キレ」を戻す設定★
+            player.jump = canvas.height * 0.042; 
+            player.grav = canvas.height * 0.0022; 
             
             isPortrait = canvas.height > canvas.width;
             document.getElementById("orientation-msg").style.display = isPortrait ? "flex" : "none";
@@ -160,10 +167,18 @@
 
                 obstacles.forEach((o, i) => {
                     o.x -= speed;
-                    let hgW = o.w * 0.15, hgH = o.h * 0.15;
-                    if (player.x + player.w * 0.45 < o.x + o.w - hgW && player.x + player.w * 0.55 > o.x + hgW &&
-                        player.y + player.h * 0.4 < o.y + o.h - hgH && player.y + player.h > o.y + hgH) {
-                        
+                    
+                    // ★当たり判定を「理不尽さのないシンプル設定」に★
+                    let hitW = o.w * 0.6; // 横幅の6割
+                    let hitH = o.h * 0.6; // 縦幅の6割
+                    let ox = o.x + (o.w - hitW)/2;
+                    let oy = o.y + (o.h - hitH)/2;
+                    let px = player.x + player.w * 0.2;
+                    let pw = player.w * 0.6;
+                    let py = player.y + player.h * 0.1;
+                    let ph = player.h * 0.8;
+
+                    if (px < ox + hitW && px + pw > ox && py < oy + hitH && py + ph > oy) {
                         if (!isMuted) { const d = new Audio(DEAD_SOUND_PATH); d.play().catch(()=>{}); }
                         gameActive = false;
                         saveGameLog(score, Math.max(score, localStorage.getItem("revsHighScore") || 0));
