@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>静岡ブルーレヴズミニゲーム</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #0a318f; font-family: sans-serif; }
         canvas { 
@@ -55,55 +56,39 @@
     <div id="start-screen" class="overlay">
         <img src="title.png" id="title-img">
         <p id="start-text">画面をタップしてスタート！</p>
-        <p id="note-text">列が進んだら、一時停止して動きましょう！</p>
+        <p id="note-text">列が動いたら、一時停止して前に進みましょう！</p>
     </div>
 
     <div id="pause-screen" class="overlay">
         <div class="pause-box">
             <h2>PAUSE</h2>
-            <p>列が進んだら、進んでね！🏉</p>
+            <p>列が動いたら、前に進んでね！🏉</p>
         </div>
     </div>
 
     <canvas id="gameCanvas"></canvas>
 
     <script>
+        // --- Supabase設定 ---
+        const SUPABASE_URL = 'https://uycmovhuawjneoicvdpb.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV5Y21vdmh1YXdqbmVvaWN2ZHBiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgxOTc4MzIsImV4cCI6MjA4Mzc3MzgzMn0.vQnxkNO9xNk2g1Yxs3nHVchgzU1FK_SHuCI9dVGNTjQ';
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        async function saveGameLog(fScore, bScore) {
+            try { 
+                await _supabase.from('game_logs').insert([{ score: fScore, high_score: bScore }]); 
+            } catch (e) { console.error('Supabase Error:', e); }
+        }
+
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
         
-        let isMuted = true; 
-        let isPaused = false;
-        const JUMP_SOUND_PATH = 'jump.mp3';
-        const DEAD_SOUND_PATH = 'dead.mp3';
-
-        const soundBtn = document.getElementById("soundBtn");
-        const pauseBtn = document.getElementById("pauseBtn");
-        const pauseScreen = document.getElementById("pause-screen");
-
-        let highScore = localStorage.getItem("revsHighScore") || 0;
-        document.getElementById("bestDisplay").innerText = "BEST: " + highScore;
-
-        soundBtn.addEventListener("pointerdown", (e) => {
-            e.preventDefault(); e.stopPropagation();
-            isMuted = !isMuted;
-            soundBtn.innerText = isMuted ? "🔇 音: OFF" : "🔊 音: ON";
-        });
-
-        pauseBtn.addEventListener("pointerdown", (e) => {
-            e.preventDefault(); e.stopPropagation();
-            if(!gameActive || !gameStarted) return;
-            isPaused = !isPaused;
-            pauseBtn.innerText = isPaused ? "▶️ 再開" : "⏸️ 一時停止";
-            pauseScreen.style.display = isPaused ? "flex" : "none";
-        });
+        let isMuted = true, isPaused = false, score = 0, gameActive = false, gameStarted = false, isPortrait = false;
+        let speed = 0, obstacles = [], groundY = 0, pLoaded = false, bLoaded = false, bRatio = 1;
+        const JUMP_SOUND_PATH = 'jump.mp3', DEAD_SOUND_PATH = 'dead.mp3';
 
         const imgP = new Image(); imgP.src = 'player.png';
         const imgB = new Image(); imgB.src = 'ball.png';
-
-        let score = 0, gameActive = false, gameStarted = false, isPortrait = false;
-        let speed = 0, obstacles = [], groundY = 0;
-        let pLoaded = false, bLoaded = false, bRatio = 1;
-
         imgP.onload = () => pLoaded = true;
         imgB.onload = () => { bLoaded = true; bRatio = imgB.width / imgB.height; };
 
@@ -116,137 +101,101 @@
             player.h = canvas.height * 0.28;
             player.w = player.h * (imgP.width / imgP.height || 1);
             player.x = canvas.width * 0.2; 
-            player.jump = canvas.height * 0.042; 
-            player.grav = canvas.height * 0.0022; 
+            
+            // クイックな物理挙動
+            player.jump = canvas.height * 0.055; 
+            player.grav = canvas.height * 0.0038; 
+            
             isPortrait = canvas.height > canvas.width;
             document.getElementById("orientation-msg").style.display = isPortrait ? "flex" : "none";
             if(!gameStarted) document.getElementById("start-screen").style.display = isPortrait ? "none" : "flex";
-            if(!gameActive) draw();
+            draw();
         }
-        window.addEventListener('resize', resize);
-        resize();
+        window.addEventListener('resize', resize); resize();
 
         function spawnManager() {
-            if (!gameActive) return;
-            if (isPaused) { setTimeout(spawnManager, 500); return; }
-            
-            let baseH = player.h * 0.75;
-            let baseW = baseH * bRatio;
+            if (!gameActive || isPaused) { setTimeout(spawnManager, 500); return; }
+            let baseH = player.h * 0.75, baseW = baseH * bRatio;
             obstacles.push({ x: canvas.width, y: groundY - baseH, w: baseW, h: baseH });
-
-            let nextWait;
-            if (score < 10) {
-                nextWait = 2000; // 初速をマイルドに
-            } else {
-                let baseWait = 1800 - Math.min((score - 10) * 45, 1200); 
-                let trick = Math.random() < 0.25 ? 900 : 0; 
-                let jitter = (Math.random() - 0.5) * 400; 
-                nextWait = baseWait + trick + jitter;
-            }
+            let nextWait = score < 10 ? 2000 : 1800 - Math.min((score - 10) * 45, 1200) + (Math.random() < 0.25 ? 900 : 0) + (Math.random() - 0.5) * 400;
             setTimeout(spawnManager, Math.max(nextWait, 800));
         }
 
         function doStart() {
             gameStarted = true; gameActive = true;
             document.getElementById("start-screen").style.display = "none";
-            score = 0; obstacles = []; 
-            speed = canvas.width / 125; // 初期速度を少し落として幼稚園児対応
-            player.y = groundY - player.h;
-            spawnManager(); 
-            loop();
+            score = 0; obstacles = []; speed = canvas.width / 130;
+            player.y = groundY - player.h; spawnManager(); loop();
         }
 
         function action(e) {
             if (e.target.id === "soundBtn" || e.target.id === "pauseBtn") return;
-            if (isPaused) return; 
+            if (isPaused || isPortrait) return;
             if (e && e.cancelable) e.preventDefault();
-            if (isPortrait) return;
-            
             if (!gameStarted) doStart();
             else if (!gameActive) location.reload();
             else if (player.onG) {
-                player.dy = -player.jump; 
-                player.onG = false;
-                if (!isMuted) {
-                    const s = new Audio(JUMP_SOUND_PATH);
-                    s.volume = 0.5;
-                    s.play().catch(()=>{});
-                }
+                player.dy = -player.jump; player.onG = false;
+                if (!isMuted) { const s = new Audio(JUMP_SOUND_PATH); s.volume = 0.5; s.play().catch(()=>{}); }
             }
         }
-
         window.addEventListener('pointerdown', action, {passive: false});
+
+        document.getElementById("soundBtn").addEventListener("pointerdown", (e) => {
+            e.preventDefault(); e.stopPropagation(); isMuted = !isMuted;
+            e.target.innerText = isMuted ? "🔇 音: OFF" : "🔊 音: ON";
+        });
+        document.getElementById("pauseBtn").addEventListener("pointerdown", (e) => {
+            e.preventDefault(); e.stopPropagation(); if(!gameActive) return;
+            isPaused = !isPaused; e.target.innerText = isPaused ? "▶️ 再開" : "⏸️ 一時停止";
+            document.getElementById("pause-screen").style.display = isPaused ? "flex" : "none";
+        });
 
         function loop() {
             if (!gameActive) return;
             if (!isPaused) {
-                player.dy += player.grav;
-                player.y += player.dy;
+                player.dy += player.grav; player.y += player.dy;
                 let floor = groundY - player.h;
                 if (player.y > floor) { player.y = floor; player.dy = 0; player.onG = true; }
 
                 obstacles.forEach((o, i) => {
                     o.x -= speed;
-                    
-                    // 当たり判定を引き締め（厳しめに戻す）
-                    let hitGapW = o.w * 0.15; 
-                    let hitGapH = o.h * 0.15;
-                    if (player.x + player.w*0.45 < o.x + o.w - hitGapW && 
-                        player.x + player.w*0.55 > o.x + hitGapW &&
-                        player.y + player.h*0.4 < o.y + o.h - hitGapH && 
-                        player.y + player.h > o.y + hitGapH) {
+                    let hgW = o.w * 0.15, hgH = o.h * 0.15;
+                    if (player.x + player.w * 0.45 < o.x + o.w - hgW && player.x + player.w * 0.55 > o.x + hgW &&
+                        player.y + player.h * 0.4 < o.y + o.h - hgH && player.y + player.h > o.y + hgH) {
                         
-                        // 衝突音を最優先で再生
-                        if (!isMuted) {
-                            const d = new Audio(DEAD_SOUND_PATH);
-                            d.play().catch(()=>{});
-                        }
+                        if (!isMuted) { const d = new Audio(DEAD_SOUND_PATH); d.play().catch(()=>{}); }
                         gameActive = false;
-                        if (score > highScore) {
-                            highScore = score;
-                            localStorage.setItem("revsHighScore", highScore);
-                        }
+                        saveGameLog(score, Math.max(score, localStorage.getItem("revsHighScore") || 0));
+                        if (score > (localStorage.getItem("revsHighScore") || 0)) localStorage.setItem("revsHighScore", score);
                     }
-
                     if (o.x + o.w < 0) { 
-                        obstacles.splice(i, 1); 
-                        score++; 
-                        // 階段状難易度：70点付近を限界に設定
-                        if (score <= 15) speed += 0.02; // 導入
-                        else if (score > 15 && score <= 35) speed += 0.01; // 踊り場
-                        else if (score > 35 && score <= 75) speed += 0.04; // 75点に向けて急加速
-                        else if (score > 75) speed += 0.005; // 限界速度
+                        obstacles.splice(i, 1); score++; 
+                        if (score <= 15) speed += 0.02;
+                        else if (score > 15 && score <= 35) speed += 0.01;
+                        else if (score > 35 && score <= 75) speed += 0.04;
+                        else speed += 0.005;
                     }
                 });
                 document.getElementById("scoreDisplay").innerText = "Score: " + score;
-                document.getElementById("bestDisplay").innerText = "BEST: " + Math.max(score, highScore);
+                document.getElementById("bestDisplay").innerText = "BEST: " + Math.max(score, localStorage.getItem("revsHighScore") || 0);
             }
-            draw();
-            requestAnimationFrame(loop);
+            draw(); requestAnimationFrame(loop);
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             if(pLoaded) ctx.drawImage(imgP, player.x, player.y, player.w, player.h);
             obstacles.forEach(o => { if(bLoaded) ctx.drawImage(imgB, o.x, o.y, o.w, o.h); });
-
             if (!gameActive && gameStarted) {
-                ctx.fillStyle = "rgba(10, 49, 143, 0.9)";
-                ctx.fillRect(0,0,canvas.width, canvas.height);
-                ctx.textAlign = "center";
-                let cy = canvas.height * 0.45;
-                ctx.fillStyle = "white"; ctx.font = "bold 24px sans-serif";
-                ctx.fillText("試合終了！", canvas.width/2, cy - 65);
-                ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 16px sans-serif";
-                ctx.fillText("今回: " + score, canvas.width/2 - 60, cy - 25);
-                ctx.fillStyle = "#fff";
-                ctx.fillText("BEST: " + highScore, canvas.width/2 + 60, cy - 25);
-                ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 55px sans-serif";
-                ctx.fillText(score, canvas.width/2, cy + 25);
-                ctx.fillStyle = "white"; ctx.font = "bold 15px sans-serif";
-                ctx.fillText("最高得点を見せてランクをチェック！", canvas.width/2, cy + 70);
-                ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 18px sans-serif";
-                ctx.fillText("▼ タップしてリトライ ▼", canvas.width/2, cy + 115);
+                ctx.fillStyle = "rgba(10, 49, 143, 0.9)"; ctx.fillRect(0,0,canvas.width, canvas.height);
+                ctx.textAlign = "center"; let cy = canvas.height * 0.45;
+                ctx.fillStyle = "white"; ctx.font = "bold 24px sans-serif"; ctx.fillText("試合終了！", canvas.width/2, cy - 65);
+                ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 16px sans-serif"; ctx.fillText("今回: " + score, canvas.width/2 - 60, cy - 25);
+                ctx.fillStyle = "#fff"; ctx.fillText("BEST: " + (localStorage.getItem("revsHighScore") || score), canvas.width/2 + 60, cy - 25);
+                ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 55px sans-serif"; ctx.fillText(score, canvas.width/2, cy + 25);
+                ctx.fillStyle = "white"; ctx.font = "bold 15px sans-serif"; ctx.fillText("最高得点を見せてランクをチェック！", canvas.width/2, cy + 70);
+                ctx.fillStyle = "#4ba4d7"; ctx.font = "bold 18px sans-serif"; ctx.fillText("▼ タップしてリトライ ▼", canvas.width/2, cy + 115);
             }
         }
     </script>
