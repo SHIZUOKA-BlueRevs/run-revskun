@@ -17,7 +17,6 @@
         #scoreDisplay { font-size: 24px; font-weight: bold; color: #4ba4d7; text-shadow: 2px 2px 4px #000; }
         #bestDisplay { font-size: 14px; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px #000; margin-top: 2px; }
 
-        /* ボタン：極限まで下げて敵との接触を回避 */
         .game-btn {
             position: absolute; bottom: 8px;
             background: rgba(10, 49, 143, 0.95); color: white;
@@ -34,8 +33,10 @@
         #start-text { font-size: 18px; animation: blink 1.5s infinite; color: #4ba4d7; font-weight: bold; margin-bottom: 10px; }
         #note-text { font-size: 11px; color: #fff; opacity: 0.9; padding: 0 20px; line-height: 1.4; }
         
-        #pause-screen { display: none; background: rgba(0,0,0,0.5); pointer-events: none; }
-        #pause-screen span { font-size: 36px; background: rgba(10,49,143,0.8); padding: 20px; border-radius: 20px; border: 2px solid #4ba4d7; }
+        #pause-screen { display: none; background: rgba(0,0,0,0.7); }
+        #pause-screen .pause-box { background: #0a318f; padding: 30px; border-radius: 20px; border: 3px solid #4ba4d7; }
+        #pause-screen h2 { font-size: 32px; color: #fff; margin: 0 0 10px 0; }
+        #pause-screen p { font-size: 16px; color: #4ba4d7; font-weight: bold; margin: 0; }
 
         @keyframes blink { 0%, 100% {opacity: 1;} 50% {opacity: 0.4;} }
     </style>
@@ -54,11 +55,14 @@
     <div id="start-screen" class="overlay">
         <img src="title.png" id="title-img">
         <p id="start-text">画面をタップしてスタート！</p>
-        <p id="note-text">列が進んだら、ゲームを一時停止して進んでください</p>
+        <p id="note-text">列が進んだら、一時停止して動きましょう！</p>
     </div>
 
     <div id="pause-screen" class="overlay">
-        <span>PAUSE</span>
+        <div class="pause-box">
+            <h2>PAUSE</h2>
+            <p>列が進んだら、進んでね！🏉</p>
+        </div>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -69,7 +73,6 @@
         
         let isMuted = true; 
         let isPaused = false;
-        // 音源のパス
         const JUMP_SOUND_PATH = 'jump.mp3';
         const DEAD_SOUND_PATH = 'dead.mp3';
 
@@ -113,11 +116,8 @@
             player.h = canvas.height * 0.28;
             player.w = player.h * (imgP.width / imgP.height || 1);
             player.x = canvas.width * 0.2; 
-            
-            // ジャンプ力を強化（スピード負けしないように調整）
             player.jump = canvas.height * 0.042; 
             player.grav = canvas.height * 0.0022; 
-            
             isPortrait = canvas.height > canvas.width;
             document.getElementById("orientation-msg").style.display = isPortrait ? "flex" : "none";
             if(!gameStarted) document.getElementById("start-screen").style.display = isPortrait ? "none" : "flex";
@@ -136,22 +136,21 @@
 
             let nextWait;
             if (score < 10) {
-                nextWait = 1800;
+                nextWait = 2000; // 初速をマイルドに
             } else {
-                let baseWait = 1800 - Math.min((score - 10) * 50, 1100); 
-                let trick = Math.random() < 0.2 ? 1000 : 0; 
+                let baseWait = 1800 - Math.min((score - 10) * 45, 1200); 
+                let trick = Math.random() < 0.25 ? 900 : 0; 
                 let jitter = (Math.random() - 0.5) * 400; 
                 nextWait = baseWait + trick + jitter;
             }
-            // 重なり防止：最低でも800msは空ける
-            setTimeout(spawnManager, Math.max(nextWait, 850));
+            setTimeout(spawnManager, Math.max(nextWait, 800));
         }
 
         function doStart() {
             gameStarted = true; gameActive = true;
             document.getElementById("start-screen").style.display = "none";
             score = 0; obstacles = []; 
-            speed = canvas.width / 110; 
+            speed = canvas.width / 125; // 初期速度を少し落として幼稚園児対応
             player.y = groundY - player.h;
             spawnManager(); 
             loop();
@@ -189,30 +188,34 @@
                 obstacles.forEach((o, i) => {
                     o.x -= speed;
                     
-                    // 当たり判定：高得点時に理不尽にならないようさらに5%甘く
-                    let hitGap = o.w * 0.25; 
-                    if (player.x + player.w*0.4 < o.x + o.w - hitGap && 
-                        player.x + player.w*0.6 > o.x + hitGap &&
-                        player.y + player.h*0.4 < o.y + o.h - hitGap && 
-                        player.y + player.h > o.y + hitGap) {
+                    // 当たり判定を引き締め（厳しめに戻す）
+                    let hitGapW = o.w * 0.15; 
+                    let hitGapH = o.h * 0.15;
+                    if (player.x + player.w*0.45 < o.x + o.w - hitGapW && 
+                        player.x + player.w*0.55 > o.x + hitGapW &&
+                        player.y + player.h*0.4 < o.y + o.h - hitGapH && 
+                        player.y + player.h > o.y + hitGapH) {
+                        
+                        // 衝突音を最優先で再生
+                        if (!isMuted) {
+                            const d = new Audio(DEAD_SOUND_PATH);
+                            d.play().catch(()=>{});
+                        }
                         gameActive = false;
                         if (score > highScore) {
                             highScore = score;
                             localStorage.setItem("revsHighScore", highScore);
-                        }
-                        if (!isMuted) {
-                            const d = new Audio(DEAD_SOUND_PATH);
-                            d.play().catch(()=>{});
                         }
                     }
 
                     if (o.x + o.w < 0) { 
                         obstacles.splice(i, 1); 
                         score++; 
-                        // 段階的スピードアップ（少しだけマイルドに調整）
-                        if (score <= 15) speed += 0.025;
-                        else if (score > 35 && score <= 45) speed += 0.035;
-                        else if (score > 65) speed += 0.01;
+                        // 階段状難易度：70点付近を限界に設定
+                        if (score <= 15) speed += 0.02; // 導入
+                        else if (score > 15 && score <= 35) speed += 0.01; // 踊り場
+                        else if (score > 35 && score <= 75) speed += 0.04; // 75点に向けて急加速
+                        else if (score > 75) speed += 0.005; // 限界速度
                     }
                 });
                 document.getElementById("scoreDisplay").innerText = "Score: " + score;
